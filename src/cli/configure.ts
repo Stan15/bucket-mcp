@@ -32,10 +32,42 @@ function requireNotCancelled<T>(value: T | symbol): T {
 export async function runConfigureWizard(): Promise<void> {
   p.intro("Bitbucket setup for Claude Code");
 
+  const mode = requireNotCancelled(
+    await p.select({
+      message: "Which permission mode?",
+      initialValue: "draft",
+      options: [
+        {
+          value: "draft",
+          label: "Draft (recommended)",
+          hint: "can create draft PRs and pending comments/tasks - nothing goes live without a human in Bitbucket's UI",
+        },
+        {
+          value: "readonly",
+          label: "Read-only",
+          hint: "no write or destructive tool of any kind",
+        },
+        {
+          value: "readwrite",
+          label: "Read-write",
+          hint: "full access, including merge/decline/delete",
+        },
+      ],
+    }),
+  );
+
+  if (mode === "readwrite") {
+    p.log.warn("Full write access includes irreversible actions (merge, decline, delete).");
+  }
+
+  const scopeLine =
+    mode === "readonly"
+      ? "2. Check: Repositories (Read), Pull requests (Read), User (Read), Workspaces (Read)"
+      : "2. Check: Repositories (Read + Write), Pull requests (Read + Write), User (Read), Workspaces (Read)";
+
   p.note(
     "1. Bitbucket -> your avatar -> Personal settings -> API tokens -> Create token\n" +
-      "2. Check: Repositories (Read + Write), Pull requests (Read + Write), User (Read), Workspaces (Read)\n" +
-      "   (Only want read access? Check just the Read boxes.)\n" +
+      `${scopeLine}\n` +
       "3. Copy the token - you won't be able to see it again",
     "Create a token",
   );
@@ -89,17 +121,10 @@ export async function runConfigureWizard(): Promise<void> {
     workspaceSpinner.error("Couldn't fetch workspaces - you can set a default later.");
   }
 
-  const readOnly = requireNotCancelled(
-    await p.confirm({
-      message: "Read-only mode? (removes merge/comment/approve/delete and every other write tool)",
-      initialValue: false,
-    }),
-  );
-
   const claudeArgs = ["mcp", "add", "--scope", "user", "--transport", "stdio"];
   claudeArgs.push("--env", `BITBUCKET_API_TOKEN=${token}`);
   if (defaultWorkspace) claudeArgs.push("--env", `BITBUCKET_DEFAULT_WORKSPACE=${defaultWorkspace}`);
-  if (readOnly) claudeArgs.push("--env", "BITBUCKET_MCP_READONLY=1");
+  claudeArgs.push("--env", `BITBUCKET_MCP_MODE=${mode}`);
   claudeArgs.push("bitbucket", "--", "npx", "-y", "github:Stan15/bucket-mcp");
 
   const redactedArgs = claudeArgs.map((a) => (a.startsWith("BITBUCKET_API_TOKEN=") ? "BITBUCKET_API_TOKEN=***" : a));

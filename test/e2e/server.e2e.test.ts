@@ -72,9 +72,14 @@ describe("bucket-mcp server (e2e)", () => {
   });
 
   it("draft mode's pull_request_create always sends draft:true to Bitbucket, regardless of anything the caller passes", async () => {
+    let capturedBody: unknown;
     const fetchImpl = createFakeFetch([
       route("GET", "/2.0/user", { status: 200, body: {} }),
-      route("POST", "/2.0/repositories/ws/repo/pullrequests", { status: 200, body: { id: 1, title: "x", state: "OPEN", draft: true } }),
+      (url, init) => {
+        if ((init?.method ?? "GET").toUpperCase() !== "POST" || url.pathname !== "/2.0/repositories/ws/repo/pullrequests") return undefined;
+        capturedBody = JSON.parse(init!.body as string);
+        return { status: 200, body: { id: 1, title: "x", state: "OPEN", draft: true } };
+      },
     ]);
     const client = await connectedClient(fetchImpl, "draft");
 
@@ -84,8 +89,52 @@ describe("bucket-mcp server (e2e)", () => {
       arguments: { workspace: "ws", repoSlug: "repo", title: "x", sourceBranch: "feature", draft: false },
     });
     expect(result.isError).toBeFalsy();
-    // The fake route only matches if the real request body actually had draft:true -
-    // if the handler had honored a smuggled draft:false, no route would match and this would error.
+    expect(capturedBody).toMatchObject({ draft: true });
+  });
+
+  it("draft mode's comment_create and task_create schemas have no pending parameter at all", async () => {
+    const fetchImpl = createFakeFetch([route("GET", "/2.0/user", { status: 200, body: {} })]);
+    const client = await connectedClient(fetchImpl, "draft");
+
+    const { tools } = await client.listTools();
+    const commentTool = tools.find((t) => t.name === "bitbucket_pull_request_comment_create")!;
+    const taskTool = tools.find((t) => t.name === "bitbucket_pull_request_task_create")!;
+    expect(Object.keys(commentTool.inputSchema.properties ?? {})).not.toContain("pending");
+    expect(Object.keys(taskTool.inputSchema.properties ?? {})).not.toContain("pending");
+  });
+
+  it("draft mode's comment_create and task_create always send pending:true to Bitbucket", async () => {
+    let capturedCommentBody: unknown;
+    let capturedTaskBody: unknown;
+    const fetchImpl = createFakeFetch([
+      route("GET", "/2.0/user", { status: 200, body: {} }),
+      (url, init) => {
+        if ((init?.method ?? "GET").toUpperCase() !== "POST" || url.pathname !== "/2.0/repositories/ws/repo/pullrequests/1/comments") return undefined;
+        capturedCommentBody = JSON.parse(init!.body as string);
+        return { status: 200, body: { id: 1, content: { raw: "x" } } };
+      },
+      (url, init) => {
+        if ((init?.method ?? "GET").toUpperCase() !== "POST" || url.pathname !== "/2.0/repositories/ws/repo/pullrequests/1/tasks") return undefined;
+        capturedTaskBody = JSON.parse(init!.body as string);
+        return { status: 200, body: { id: 1, state: "UNRESOLVED", content: { raw: "x" } } };
+      },
+    ]);
+    const client = await connectedClient(fetchImpl, "draft");
+
+    const commentResult = await client.callTool({
+      name: "bitbucket_pull_request_comment_create",
+      // @ts-expect-error - deliberately trying to smuggle pending:false through even though the schema doesn't declare it
+      arguments: { workspace: "ws", repoSlug: "repo", id: 1, body: "x", pending: false },
+    });
+    const taskResult = await client.callTool({
+      name: "bitbucket_pull_request_task_create",
+      // @ts-expect-error - deliberately trying to smuggle pending:false through even though the schema doesn't declare it
+      arguments: { workspace: "ws", repoSlug: "repo", id: 1, content: "x", pending: false },
+    });
+    expect(commentResult.isError).toBeFalsy();
+    expect(taskResult.isError).toBeFalsy();
+    expect(capturedCommentBody).toMatchObject({ pending: true });
+    expect(capturedTaskBody).toMatchObject({ pending: true });
   });
 
   it("fails open (keeps every tool) when the scope probe can't determine granted scopes", async () => {

@@ -2,15 +2,52 @@
 
 An MCP server for Bitbucket Cloud — code review and PR workflows (repos, pull requests, commits, branches, file browsing, code search, workspace/user discovery) from Claude Code.
 
-## 1. Get a Bitbucket API token
+## Setup
+
+```bash
+npx github:Stan15/bucket-mcp configure
+```
+
+One guided command: it walks you through creating a Bitbucket API token (telling you exactly which scope boxes to check), validates it live, lets you pick a default workspace from your real list, asks which permission mode you want, and registers everything with Claude Code for you (`claude mcp add --scope user`, so it's available in every project). Restart Claude Code afterward and the tools are available everywhere.
+
+Prefer to do it by hand, or want to see exactly what gets registered? See [Manual setup](#manual-setup) below.
+
+## Permission modes
+
+Set via `BITBUCKET_MCP_MODE`, or picked during `configure`:
+
+| Mode | What it allows |
+| --- | --- |
+| `readonly` | No write or destructive tool of any kind. |
+| `draft` (default) | Can create draft PRs and pending comments/tasks — nothing else that writes. A draft PR is visible to teammates, just marked not-ready-for-review; a pending comment/task is invisible to everyone but its author until they submit their review in Bitbucket's own UI. These two are genuinely different kinds of "not live." Publishing or making something live is always a human action in Bitbucket's UI — this mode can't do it. |
+| `readwrite` | Full access, including merge/decline/delete. PRs and comments/tasks you create still default to draft/pending — pass `draft:false` / `pending:false` explicitly to make one live immediately. |
+
+`BITBUCKET_MCP_READONLY=1` still works as an alias for `mode=readonly`, for anyone who set it before `BITBUCKET_MCP_MODE` existed.
+
+## Rotating your token
+
+Bitbucket API tokens expire (max 1 year) and can't be edited after creation — only replaced. Re-run `configure` with the new token, or update the `BITBUCKET_API_TOKEN` value directly in Claude Code's MCP config, then restart Claude Code.
+
+## Updating
+
+`npx` re-checks the repo each run, so restarting Claude Code picks up whatever's on `main`. No separate update step.
+
+## Troubleshooting
+
+- **A tool call fails with "this operation requires scope(s) [...]"** — your token doesn't have that scope. Create a new one with it added and re-run `configure`.
+- **Tools you expect are missing from the list** — check your `BITBUCKET_MCP_MODE`, and check your token's scopes.
+- **"No workspace specified..." error** — either pass `workspace` explicitly, set `BITBUCKET_DEFAULT_WORKSPACE`, or ask the AI to call `bitbucket_workspace_list` first.
+
+## Manual setup
+
+### 1. Get a Bitbucket API token
 
 1. Bitbucket → your avatar → **Personal settings** → **API tokens** → **Create token**
 2. Check these boxes: **Repositories** (Read + Write), **Pull requests** (Read + Write), **User** (Read), **Workspaces** (Read)
+   (Only want read-only mode? Check just the Read boxes.)
 3. Copy the token — you won't be able to see it again
 
-Only need read access? Check just the Read boxes and skip Write entirely.
-
-## 2. Set the token without putting it in your shell history
+### 2. Set the token without putting it in your shell history
 
 ```bash
 # in ~/.zshrc, ~/.bashrc, or a git-ignored .env you source
@@ -19,15 +56,15 @@ export BITBUCKET_API_TOKEN=your-token-here
 
 The server reads it from the environment it's launched in, so it never needs to appear on the `claude mcp add` command line or get written into Claude Code's own config file.
 
-## 3. Add it to Claude Code
+### 3. Add it to Claude Code
 
 ```bash
 claude mcp add --scope user --transport stdio bitbucket -- npx -y github:Stan15/bucket-mcp
 ```
 
-One command, run once, ever — `--scope user` registers it globally across every project rather than just the one you happen to be in. `npx` fetches, builds, and runs it, no local clone needed. Restart Claude Code and the tools are available everywhere.
+`--scope user` registers it globally across every project rather than just the one you happen to be in. `npx` fetches, builds, and runs it, no local clone needed.
 
-## Optional: a default workspace
+### Optional: a default workspace
 
 Most people work in one Bitbucket workspace. Set one and every tool's `workspace` argument becomes optional:
 
@@ -37,27 +74,13 @@ export BITBUCKET_DEFAULT_WORKSPACE=your-team-slug
 
 You can still target a different workspace any time by asking for it explicitly — the AI can call `bitbucket_workspace_list` to discover what else it has access to.
 
-## Optional: read-only mode
+### Optional: permission mode
 
 ```bash
-export BITBUCKET_MCP_READONLY=1
+export BITBUCKET_MCP_MODE=readonly   # or draft (the default), or readwrite
 ```
 
-Removes every write/destructive tool (merge, comment, approve, branch delete, etc.) regardless of what your token can do. Useful if you only ever want to read, or want a second, stricter connection alongside a full-access one.
-
-## Rotating your token
-
-Bitbucket API tokens expire (max 1 year) and can't be edited after creation — only replaced. Update the `BITBUCKET_API_TOKEN` value wherever you set it in step 2, then restart Claude Code — no need to touch the `claude mcp add` registration itself.
-
-## Updating
-
-`npx` re-checks the repo each run, so restarting Claude Code picks up whatever's on `main`. No separate update step.
-
-## Troubleshooting
-
-- **A tool call fails with "this operation requires scope(s) [...]"** — your token doesn't have that scope. Create a new one with it added (see step 1) and update `BITBUCKET_API_TOKEN`.
-- **Tools you expect are missing from the list** — check you didn't set `BITBUCKET_MCP_READONLY=1`, and check your token's scopes.
-- **"No workspace specified..." error** — either pass `workspace` explicitly, set `BITBUCKET_DEFAULT_WORKSPACE`, or ask the AI to call `bitbucket_workspace_list` first.
+See [Permission modes](#permission-modes) above for what each one allows.
 
 ## Development
 
@@ -68,4 +91,4 @@ npm install && npm run build
 npm test
 ```
 
-Point step 3's command at `node /absolute/path/to/bucket-mcp/dist/index.js` instead of the `npx` line to run from your local clone.
+Point the manual setup's step 3 command at `node /absolute/path/to/bucket-mcp/dist/index.js` instead of the `npx` line to run from your local clone.

@@ -22,10 +22,10 @@ The server reads it from the environment it's launched in, so it never needs to 
 ## 3. Add it to Claude Code
 
 ```bash
-claude mcp add --transport stdio bitbucket -- npx -y github:Stan15/bucket-mcp
+claude mcp add --scope user --transport stdio bitbucket -- npx -y github:Stan15/bucket-mcp
 ```
 
-One command — `npx` fetches, builds, and runs it, no local clone needed. Restart Claude Code and the tools are available.
+One command, run once, ever — `--scope user` registers it globally across every project rather than just the one you happen to be in. `npx` fetches, builds, and runs it, no local clone needed. Restart Claude Code and the tools are available everywhere.
 
 Prefer running from a local clone instead (e.g. for development)? `git clone`, then `npm install && npm run build`, and point the command above at `node /absolute/path/to/bucket-mcp/dist/index.js` instead of the `npx` line.
 

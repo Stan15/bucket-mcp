@@ -2,16 +2,7 @@
 
 An MCP server for Bitbucket Cloud — code review and PR workflows (repos, pull requests, commits, branches, file browsing, code search, workspace/user discovery) from Claude Code.
 
-## 1. Install
-
-```bash
-npm install
-npm run build
-```
-
-Requires Node 20+.
-
-## 2. Get a Bitbucket API token
+## 1. Get a Bitbucket API token
 
 1. Bitbucket → your avatar → **Personal settings** → **API tokens** → **Create token**
 2. Give it these scopes: `read:repository:bitbucket`, `write:repository:bitbucket`, `read:pullrequest:bitbucket`, `write:pullrequest:bitbucket`, `read:user:bitbucket`, `read:workspace:bitbucket`
@@ -19,7 +10,7 @@ Requires Node 20+.
 
 Only need read access? Grant just the `read:*` scopes and skip write entirely.
 
-## 3. Set the token without putting it in your shell history
+## 2. Set the token without putting it in your shell history
 
 ```bash
 # in ~/.zshrc, ~/.bashrc, or a git-ignored .env you source
@@ -28,13 +19,15 @@ export BITBUCKET_API_TOKEN=your-token-here
 
 The server reads it from the environment it's launched in, so it never needs to appear on the `claude mcp add` command line or get written into Claude Code's own config file.
 
-## 4. Add it to Claude Code
+## 3. Add it to Claude Code
 
 ```bash
-claude mcp add --transport stdio bitbucket -- node /absolute/path/to/bucket-mcp/dist/index.js
+claude mcp add --transport stdio bitbucket -- npx -y github:Stan15/bucket-mcp
 ```
 
-Use the absolute path to `dist/index.js` from step 1. That's it — restart Claude Code and the tools are available.
+One command — `npx` fetches, builds, and runs it, no local clone needed. Restart Claude Code and the tools are available.
+
+Prefer running from a local clone instead (e.g. for development)? `git clone`, then `npm install && npm run build`, and point the command above at `node /absolute/path/to/bucket-mcp/dist/index.js` instead of the `npx` line.
 
 ## Optional: a default workspace
 
@@ -56,10 +49,14 @@ Removes every write/destructive tool (merge, comment, approve, branch delete, et
 
 ## Rotating your token
 
-Bitbucket API tokens expire (max 1 year) and can't be edited after creation — only replaced. Update the `BITBUCKET_API_TOKEN` value wherever you set it in step 3, then restart Claude Code — no need to touch the `claude mcp add` registration itself.
+Bitbucket API tokens expire (max 1 year) and can't be edited after creation — only replaced. Update the `BITBUCKET_API_TOKEN` value wherever you set it in step 2, then restart Claude Code — no need to touch the `claude mcp add` registration itself.
+
+## Updating
+
+`npx` re-checks the repo each run, so restarting Claude Code picks up whatever's on `main`. No separate update step.
 
 ## Troubleshooting
 
-- **A tool call fails with "this operation requires scope(s) [...]"** — your token doesn't have that scope. Create a new one with it added (see step 2) and update `BITBUCKET_API_TOKEN`.
+- **A tool call fails with "this operation requires scope(s) [...]"** — your token doesn't have that scope. Create a new one with it added (see step 1) and update `BITBUCKET_API_TOKEN`.
 - **Tools you expect are missing from the list** — check you didn't set `BITBUCKET_MCP_READONLY=1`, and check your token's scopes.
 - **"No workspace specified..." error** — either pass `workspace` explicitly, set `BITBUCKET_DEFAULT_WORKSPACE`, or ask the AI to call `bitbucket_workspace_list` first.

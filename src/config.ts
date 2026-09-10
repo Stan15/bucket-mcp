@@ -31,7 +31,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return { apiToken, mode, defaultWorkspace };
 }
 
-function resolveMode(env: NodeJS.ProcessEnv): Mode {
+export function resolveMode(env: NodeJS.ProcessEnv): Mode {
   const raw = env.BITBUCKET_MCP_MODE?.toLowerCase();
   if (raw === "readonly" || raw === "draft" || raw === "readwrite") {
     return raw;

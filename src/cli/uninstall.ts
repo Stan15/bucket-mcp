@@ -1,7 +1,7 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import * as p from "@clack/prompts";
-import { isServerRegistered, SERVER_NAME } from "./configure.js";
+import { getExistingRegistration, SERVER_NAME } from "./configure.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -9,7 +9,17 @@ const execFileAsync = promisify(execFile);
 export async function runUninstallWizard(): Promise<void> {
   p.intro("Remove Bitbucket from Claude Code");
 
-  if (!(await isServerRegistered(SERVER_NAME))) {
+  let registered: boolean;
+  try {
+    registered = (await getExistingRegistration(SERVER_NAME)) !== undefined;
+  } catch (error) {
+    // Distinguish "claude isn't runnable" from "nothing registered" - silently
+    // reporting the latter here would be actively misleading.
+    p.cancel(`Couldn't check whether ${SERVER_NAME} is registered: ${error instanceof Error ? error.message : error}`);
+    process.exitCode = 1;
+    return;
+  }
+  if (!registered) {
     p.outro(`No "${SERVER_NAME}" MCP server is registered - nothing to remove.`);
     return;
   }

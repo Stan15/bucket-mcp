@@ -12,7 +12,7 @@ One guided command: it walks you through creating a Bitbucket API token (telling
 
 Prefer to do it by hand, or want to see exactly what gets registered? See [Manual setup](#manual-setup) below.
 
-Run it again any time to change your token, default workspace, or permission mode — it detects an existing registration and replaces it, rather than erroring on a name collision.
+Run it again any time to change your token, default workspace, or permission mode. It shows what you're currently configured as, pre-fills every question with that, and lets you keep your existing token instead of pasting it again — then replaces the old registration with the new one rather than erroring on a name collision.
 
 ## Uninstalling
 

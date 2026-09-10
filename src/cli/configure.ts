@@ -4,20 +4,46 @@ import * as p from "@clack/prompts";
 import { BitbucketClient } from "../bitbucket/client.js";
 import { StaticTokenCredentialProvider } from "../credentials.js";
 import { UserSchema, WorkspaceAccessSchema } from "../bitbucket/types.js";
+import { resolveMode } from "../config.js";
 
 const execFileAsync = promisify(execFile);
 
 /** The name this server is always registered under - shared with uninstall.ts. */
 export const SERVER_NAME = "bitbucket";
 
-/** `claude mcp get <name>` exits non-zero when nothing by that name is registered. */
-export async function isServerRegistered(name: string): Promise<boolean> {
-  try {
-    await execFileAsync("claude", ["mcp", "get", name]);
-    return true;
-  } catch {
-    return false;
+/**
+ * `claude mcp get <name>` has no `--json` output, so this parses its
+ * "Environment:" section - one `KEY=value` per line, indented, ending at the
+ * first blank line or unindented line - out of the plain-text listing.
+ */
+export function parseRegisteredEnvironment(claudeMcpGetOutput: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  const lines = claudeMcpGetOutput.split("\n");
+  const envHeaderIndex = lines.findIndex((line) => line.trim() === "Environment:");
+  if (envHeaderIndex === -1) return env;
+  for (const line of lines.slice(envHeaderIndex + 1)) {
+    const match = line.match(/^\s+([A-Z0-9_]+)=(.*)$/);
+    if (!match) break;
+    env[match[1]] = match[2];
   }
+  return env;
+}
+
+/**
+ * Returns undefined when nothing by that name is registered - distinguished
+ * from a genuine failure to run `claude` at all (e.g. it isn't on PATH),
+ * which throws instead, so callers don't mistake "can't tell" for
+ * "definitely not registered".
+ */
+export async function getExistingRegistration(name: string): Promise<Record<string, string> | undefined> {
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync("claude", ["mcp", "get", name]));
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code !== "ENOENT") return undefined;
+    throw error;
+  }
+  return parseRegisteredEnvironment(stdout);
 }
 
 /**
@@ -45,13 +71,56 @@ function requireNotCancelled<T>(value: T | symbol): T {
   return value as T;
 }
 
+async function promptForNewToken(scopeLine: string): Promise<string> {
+  p.note(
+    "1. Bitbucket -> your avatar -> Personal settings -> API tokens -> Create token\n" +
+      `${scopeLine}\n` +
+      "3. Copy the token - you won't be able to see it again",
+    "Create a token",
+  );
+  return requireNotCancelled(
+    await p.password({
+      message: "Paste your Bitbucket API token",
+      validate: (value) => (value ? undefined : "A token is required"),
+    }),
+  );
+}
+
 export async function runConfigureWizard(): Promise<void> {
   p.intro("Bitbucket setup for Claude Code");
+
+  let existing: Record<string, string> | undefined;
+  try {
+    existing = await getExistingRegistration(SERVER_NAME);
+  } catch (error) {
+    p.cancel(
+      `Couldn't check for an existing "${SERVER_NAME}" registration: ${error instanceof Error ? error.message : error}. ` +
+        "Is Claude Code's `claude` CLI installed and on your PATH?",
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  let currentMode: ReturnType<typeof resolveMode> | undefined;
+  if (existing) {
+    try {
+      currentMode = resolveMode(existing);
+    } catch {
+      // An unrecognized BITBUCKET_MCP_MODE value (hand-edited, or from a
+      // future version) shouldn't crash the one tool meant to fix it.
+      p.log.warn(`Your existing BITBUCKET_MCP_MODE ("${existing.BITBUCKET_MCP_MODE}") isn't a value this version recognizes - pick one below.`);
+    }
+  }
+  const currentWorkspace = existing?.BITBUCKET_DEFAULT_WORKSPACE;
+
+  if (existing) {
+    p.note(`Mode: ${currentMode ?? "(unrecognized)"}\nDefault workspace: ${currentWorkspace ?? "(none set)"}`, "You're already configured");
+  }
 
   const mode = requireNotCancelled(
     await p.select({
       message: "Which permission mode?",
-      initialValue: "draft",
+      initialValue: currentMode ?? "draft",
       options: [
         {
           value: "draft",
@@ -81,19 +150,15 @@ export async function runConfigureWizard(): Promise<void> {
       ? "2. Check: Repositories (Read), Pull requests (Read), User (Read), Workspaces (Read)"
       : "2. Check: Repositories (Read + Write), Pull requests (Read + Write), User (Read), Workspaces (Read)";
 
-  p.note(
-    "1. Bitbucket -> your avatar -> Personal settings -> API tokens -> Create token\n" +
-      `${scopeLine}\n` +
-      "3. Copy the token - you won't be able to see it again",
-    "Create a token",
-  );
-
-  const token = requireNotCancelled(
-    await p.password({
-      message: "Paste your Bitbucket API token",
-      validate: (value) => (value ? undefined : "A token is required"),
-    }),
-  );
+  let token: string;
+  if (existing?.BITBUCKET_API_TOKEN) {
+    const keepToken = requireNotCancelled(
+      await p.confirm({ message: "Keep your existing Bitbucket API token?", initialValue: true }),
+    );
+    token = keepToken ? existing.BITBUCKET_API_TOKEN : await promptForNewToken(scopeLine);
+  } else {
+    token = await promptForNewToken(scopeLine);
+  }
 
   const client = new BitbucketClient(new StaticTokenCredentialProvider(token));
 
@@ -125,6 +190,7 @@ export async function runConfigureWizard(): Promise<void> {
       const chosen = requireNotCancelled(
         await p.select({
           message: "Which workspace should be the default?",
+          initialValue: workspaces.some((w) => w.workspace.slug === currentWorkspace) ? currentWorkspace : undefined,
           options: [
             ...workspaces.map((w) => ({ value: w.workspace.slug, label: w.workspace.name, hint: w.workspace.slug })),
             { value: undefined, label: "Skip - I'll specify one per request or set this later" },
@@ -132,12 +198,14 @@ export async function runConfigureWizard(): Promise<void> {
         }),
       );
       defaultWorkspace = chosen;
+    } else {
+      p.log.warn("No workspaces found for this token - you can set BITBUCKET_DEFAULT_WORKSPACE later.");
     }
   } catch {
     workspaceSpinner.error("Couldn't fetch workspaces - you can set a default later.");
   }
 
-  const alreadyRegistered = await isServerRegistered(SERVER_NAME);
+  const alreadyRegistered = existing !== undefined;
 
   const claudeArgs = ["mcp", "add", "--scope", "user", "--transport", "stdio"];
   claudeArgs.push("--env", `BITBUCKET_API_TOKEN=${token}`);

@@ -21,14 +21,21 @@ process.on("uncaughtException", (error) => {
   process.exit(1);
 });
 
+const SUBCOMMANDS = ["configure", "uninstall"];
+
 async function main() {
-  if (process.argv[2] === "configure") {
+  const subcommand = process.argv[2];
+  if (subcommand === "configure") {
     await runConfigureWizard();
     return;
   }
-  if (process.argv[2] === "uninstall") {
+  if (subcommand === "uninstall") {
     await runUninstallWizard();
     return;
+  }
+  if (subcommand !== undefined) {
+    console.error(`bucket-mcp: unknown command "${subcommand}" - expected one of: ${SUBCOMMANDS.join(", ")}, or no command to start the MCP server.`);
+    process.exit(1);
   }
 
   const config = loadConfig();

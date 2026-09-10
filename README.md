@@ -5,10 +5,10 @@ An MCP server for Bitbucket Cloud — code review and PR workflows (repos, pull 
 ## 1. Get a Bitbucket API token
 
 1. Bitbucket → your avatar → **Personal settings** → **API tokens** → **Create token**
-2. Give it these scopes: `read:repository:bitbucket`, `write:repository:bitbucket`, `read:pullrequest:bitbucket`, `write:pullrequest:bitbucket`, `read:user:bitbucket`, `read:workspace:bitbucket`
+2. Check these boxes: **Repositories** (Read + Write), **Pull requests** (Read + Write), **User** (Read), **Workspaces** (Read)
 3. Copy the token — you won't be able to see it again
 
-Only need read access? Grant just the `read:*` scopes and skip write entirely.
+Only need read access? Check just the Read boxes and skip Write entirely.
 
 ## 2. Set the token without putting it in your shell history
 
@@ -26,8 +26,6 @@ claude mcp add --scope user --transport stdio bitbucket -- npx -y github:Stan15/
 ```
 
 One command, run once, ever — `--scope user` registers it globally across every project rather than just the one you happen to be in. `npx` fetches, builds, and runs it, no local clone needed. Restart Claude Code and the tools are available everywhere.
-
-Prefer running from a local clone instead (e.g. for development)? `git clone`, then `npm install && npm run build`, and point the command above at `node /absolute/path/to/bucket-mcp/dist/index.js` instead of the `npx` line.
 
 ## Optional: a default workspace
 
@@ -60,3 +58,14 @@ Bitbucket API tokens expire (max 1 year) and can't be edited after creation — 
 - **A tool call fails with "this operation requires scope(s) [...]"** — your token doesn't have that scope. Create a new one with it added (see step 1) and update `BITBUCKET_API_TOKEN`.
 - **Tools you expect are missing from the list** — check you didn't set `BITBUCKET_MCP_READONLY=1`, and check your token's scopes.
 - **"No workspace specified..." error** — either pass `workspace` explicitly, set `BITBUCKET_DEFAULT_WORKSPACE`, or ask the AI to call `bitbucket_workspace_list` first.
+
+## Development
+
+```bash
+git clone git@github.com:Stan15/bucket-mcp.git
+cd bucket-mcp
+npm install && npm run build
+npm test
+```
+
+Point step 3's command at `node /absolute/path/to/bucket-mcp/dist/index.js` instead of the `npx` line to run from your local clone.

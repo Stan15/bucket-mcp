@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Comment, PullRequest } from "../bitbucket/types.js";
+import { CommentSchema, DiffStatEntrySchema, PullRequest, PullRequestSchema } from "../bitbucket/types.js";
 import { defineTool, ToolSpec } from "./index.js";
 import { okResult, withErrorHandling } from "./toolHelpers.js";
 
@@ -34,10 +34,11 @@ const pullRequestList = defineTool({
   requiredScope: "read:pullrequest:bitbucket",
   isWriteOrDestructive: false,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const { values, hasMore } = await bitbucket.paginate<PullRequest>(
+    const { values, hasMore } = await bitbucket.paginate(
       `/repositories/${args.workspace}/${args.repoSlug}/pullrequests`,
       { state: args.state, fields: PR_LIST_FIELDS, pagelen: Math.min(args.maxItems, 50) },
       args.maxItems,
+      PullRequestSchema,
     );
     const text =
       values.map(summarizePr).join("\n") + (hasMore ? "\n(more results available - narrow with `state` or raise maxItems)" : "");
@@ -53,9 +54,11 @@ const pullRequestGet = defineTool({
   requiredScope: "read:pullrequest:bitbucket",
   isWriteOrDestructive: false,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const pr = await bitbucket.get<PullRequest>(`/repositories/${args.workspace}/${args.repoSlug}/pullrequests/${args.id}`, {
-      fields: PR_FULL_FIELDS,
-    });
+    const pr = await bitbucket.get(
+      `/repositories/${args.workspace}/${args.repoSlug}/pullrequests/${args.id}`,
+      { fields: PR_FULL_FIELDS },
+      PullRequestSchema,
+    );
     return okResult({ pullRequest: pr }, `${summarizePr(pr)}\n\n${pr.description ?? "(no description)"}`);
   }),
 });
@@ -75,13 +78,18 @@ const pullRequestCreate = defineTool({
   requiredScope: "write:pullrequest:bitbucket",
   isWriteOrDestructive: true,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const pr = await bitbucket.post<PullRequest>(`/repositories/${args.workspace}/${args.repoSlug}/pullrequests`, {
-      title: args.title,
-      description: args.description,
-      source: { branch: { name: args.sourceBranch } },
-      destination: args.destinationBranch ? { branch: { name: args.destinationBranch } } : undefined,
-      reviewers: args.reviewers?.map((uuid) => ({ uuid })),
-    });
+    const pr = await bitbucket.post(
+      `/repositories/${args.workspace}/${args.repoSlug}/pullrequests`,
+      {
+        title: args.title,
+        description: args.description,
+        source: { branch: { name: args.sourceBranch } },
+        destination: args.destinationBranch ? { branch: { name: args.destinationBranch } } : undefined,
+        reviewers: args.reviewers?.map((uuid) => ({ uuid })),
+      },
+      undefined,
+      PullRequestSchema,
+    );
     return okResult({ pullRequest: pr }, `Created ${summarizePr(pr)}\n${pr.links?.html?.href ?? ""}`);
   }),
 });
@@ -100,11 +108,16 @@ const pullRequestUpdate = defineTool({
   requiredScope: "write:pullrequest:bitbucket",
   isWriteOrDestructive: true,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const pr = await bitbucket.put<PullRequest>(`/repositories/${args.workspace}/${args.repoSlug}/pullrequests/${args.id}`, {
-      title: args.title,
-      description: args.description,
-      destination: args.destinationBranch ? { branch: { name: args.destinationBranch } } : undefined,
-    });
+    const pr = await bitbucket.put(
+      `/repositories/${args.workspace}/${args.repoSlug}/pullrequests/${args.id}`,
+      {
+        title: args.title,
+        description: args.description,
+        destination: args.destinationBranch ? { branch: { name: args.destinationBranch } } : undefined,
+      },
+      undefined,
+      PullRequestSchema,
+    );
     return okResult({ pullRequest: pr }, `Updated ${summarizePr(pr)}`);
   }),
 });
@@ -143,7 +156,12 @@ const pullRequestDecline = defineTool({
   requiredScope: "write:pullrequest:bitbucket",
   isWriteOrDestructive: true,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const pr = await bitbucket.post<PullRequest>(`/repositories/${args.workspace}/${args.repoSlug}/pullrequests/${args.id}/decline`);
+    const pr = await bitbucket.post(
+      `/repositories/${args.workspace}/${args.repoSlug}/pullrequests/${args.id}/decline`,
+      undefined,
+      undefined,
+      PullRequestSchema,
+    );
     return okResult({ pullRequest: pr }, `Declined ${summarizePr(pr)}`);
   }),
 });
@@ -160,9 +178,12 @@ const pullRequestMerge = defineTool({
   requiredScope: "write:pullrequest:bitbucket",
   isWriteOrDestructive: true,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const result = await bitbucket.post<PullRequest>(`/repositories/${args.workspace}/${args.repoSlug}/pullrequests/${args.id}/merge`, {
-      merge_strategy: args.strategy,
-    });
+    const result = await bitbucket.post(
+      `/repositories/${args.workspace}/${args.repoSlug}/pullrequests/${args.id}/merge`,
+      { merge_strategy: args.strategy },
+      undefined,
+      PullRequestSchema,
+    );
     return okResult({ pullRequest: result }, `Merged PR #${args.id} using ${args.strategy}.`);
   }),
 });
@@ -175,13 +196,12 @@ const pullRequestDiffstat = defineTool({
   requiredScope: "read:pullrequest:bitbucket",
   isWriteOrDestructive: false,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const { values } = await bitbucket.paginate<{
-      status: string;
-      lines_added?: number;
-      lines_removed?: number;
-      old?: { path: string };
-      new?: { path: string };
-    }>(`/repositories/${args.workspace}/${args.repoSlug}/pullrequests/${args.id}/diffstat`, undefined, 200);
+    const { values } = await bitbucket.paginate(
+      `/repositories/${args.workspace}/${args.repoSlug}/pullrequests/${args.id}/diffstat`,
+      undefined,
+      200,
+      DiffStatEntrySchema,
+    );
     const text = values
       .map((d) => `${d.status} ${d.new?.path ?? d.old?.path} (+${d.lines_added ?? 0}/-${d.lines_removed ?? 0})`)
       .join("\n");
@@ -222,10 +242,15 @@ const pullRequestCommentCreate = defineTool({
   requiredScope: "write:pullrequest:bitbucket",
   isWriteOrDestructive: true,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const comment = await bitbucket.post<Comment>(`/repositories/${args.workspace}/${args.repoSlug}/pullrequests/${args.id}/comments`, {
-      content: { raw: args.body },
-      inline: args.inlinePath ? { path: args.inlinePath, to: args.inlineLine } : undefined,
-    });
+    const comment = await bitbucket.post(
+      `/repositories/${args.workspace}/${args.repoSlug}/pullrequests/${args.id}/comments`,
+      {
+        content: { raw: args.body },
+        inline: args.inlinePath ? { path: args.inlinePath, to: args.inlineLine } : undefined,
+      },
+      undefined,
+      CommentSchema,
+    );
     return okResult({ comment }, `Comment added to PR #${args.id}.`);
   }),
 });
@@ -238,10 +263,11 @@ const pullRequestCommentList = defineTool({
   requiredScope: "read:pullrequest:bitbucket",
   isWriteOrDestructive: false,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const { values } = await bitbucket.paginate<Comment>(
+    const { values } = await bitbucket.paginate(
       `/repositories/${args.workspace}/${args.repoSlug}/pullrequests/${args.id}/comments`,
       { fields: "next,values.id,values.content.raw,values.user.display_name,values.inline.path,values.inline.to,values.deleted" },
       args.maxItems,
+      CommentSchema,
     );
     const active = values.filter((c) => !c.deleted);
     const text = active.map((c) => `[${c.id}] ${c.user?.display_name ?? "?"}${c.inline ? ` (${c.inline.path}:${c.inline.to ?? ""})` : ""}: ${c.content.raw}`).join("\n---\n");

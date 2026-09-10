@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Branch, Tag } from "../bitbucket/types.js";
+import { BranchSchema, TagSchema } from "../bitbucket/types.js";
 import { defineTool, ToolSpec } from "./index.js";
 import { okResult, withErrorHandling } from "./toolHelpers.js";
 
@@ -14,7 +14,12 @@ const branchList = defineTool({
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const { values, hasMore } = await bitbucket.paginate<Branch>(`/repositories/${args.workspace}/${args.repoSlug}/refs/branches`, { q: args.query, fields: REF_LIST_FIELDS }, args.maxItems);
+    const { values, hasMore } = await bitbucket.paginate(
+      `/repositories/${args.workspace}/${args.repoSlug}/refs/branches`,
+      { q: args.query, fields: REF_LIST_FIELDS },
+      args.maxItems,
+      BranchSchema,
+    );
     const text = values.map((b) => `${b.name} @ ${b.target?.hash.slice(0, 12)}`).join("\n") + (hasMore ? "\n(more results available)" : "");
     return okResult({ branches: values, hasMore }, text || "No branches found.");
   }),
@@ -28,10 +33,12 @@ const branchCreate = defineTool({
   requiredScope: "write:repository:bitbucket",
   isWriteOrDestructive: true,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const branch = await bitbucket.post<Branch>(`/repositories/${args.workspace}/${args.repoSlug}/refs/branches`, {
-      name: args.name,
-      target: { hash: args.target },
-    });
+    const branch = await bitbucket.post(
+      `/repositories/${args.workspace}/${args.repoSlug}/refs/branches`,
+      { name: args.name, target: { hash: args.target } },
+      undefined,
+      BranchSchema,
+    );
     return okResult({ branch }, `Created branch ${branch.name}.`);
   }),
 });
@@ -57,7 +64,12 @@ const tagList = defineTool({
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const { values, hasMore } = await bitbucket.paginate<Tag>(`/repositories/${args.workspace}/${args.repoSlug}/refs/tags`, { fields: REF_LIST_FIELDS }, args.maxItems);
+    const { values, hasMore } = await bitbucket.paginate(
+      `/repositories/${args.workspace}/${args.repoSlug}/refs/tags`,
+      { fields: REF_LIST_FIELDS },
+      args.maxItems,
+      TagSchema,
+    );
     const text = values.map((t) => `${t.name} @ ${t.target?.hash.slice(0, 12)}`).join("\n") + (hasMore ? "\n(more results available)" : "");
     return okResult({ tags: values, hasMore }, text || "No tags found.");
   }),

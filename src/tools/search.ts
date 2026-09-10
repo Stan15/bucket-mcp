@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CodeSearchResult } from "../bitbucket/types.js";
+import { CodeSearchResultSchema } from "../bitbucket/types.js";
 import { defineTool, ToolSpec } from "./index.js";
 import { okResult, withErrorHandling } from "./toolHelpers.js";
 
@@ -15,10 +15,11 @@ const codeSearch = defineTool({
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const { values, hasMore } = await bitbucket.paginate<CodeSearchResult>(
+    const { values, hasMore } = await bitbucket.paginate(
       `/workspaces/${args.workspace}/search/code`,
       { search_query: args.searchQuery },
       args.maxItems,
+      CodeSearchResultSchema,
     );
     const text =
       values

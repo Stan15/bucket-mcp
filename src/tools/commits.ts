@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Commit, CommitStatus } from "../bitbucket/types.js";
+import { Commit, CommitSchema, CommitStatusSchema, DiffStatEntrySchema } from "../bitbucket/types.js";
 import { defineTool, ToolSpec } from "./index.js";
 import { okResult, withErrorHandling } from "./toolHelpers.js";
 
@@ -23,7 +23,7 @@ const commitList = defineTool({
     const path = args.revision
       ? `/repositories/${args.workspace}/${args.repoSlug}/commits/${args.revision}`
       : `/repositories/${args.workspace}/${args.repoSlug}/commits`;
-    const { values, hasMore } = await bitbucket.paginate<Commit>(path, { fields: COMMIT_LIST_FIELDS }, args.maxItems);
+    const { values, hasMore } = await bitbucket.paginate(path, { fields: COMMIT_LIST_FIELDS }, args.maxItems, CommitSchema);
     const text = values.map(summarizeCommit).join("\n") + (hasMore ? "\n(more results available)" : "");
     return okResult({ commits: values, hasMore }, text || "No commits found.");
   }),
@@ -37,7 +37,7 @@ const commitGet = defineTool({
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const c = await bitbucket.get<Commit>(`/repositories/${args.workspace}/${args.repoSlug}/commit/${args.commit}`, { fields: COMMIT_FULL_FIELDS });
+    const c = await bitbucket.get(`/repositories/${args.workspace}/${args.repoSlug}/commit/${args.commit}`, { fields: COMMIT_FULL_FIELDS }, CommitSchema);
     return okResult({ commit: c }, `${summarizeCommit(c)}\n\n${c.message}`);
   }),
 });
@@ -50,10 +50,11 @@ const commitDiffstat = defineTool({
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const { values } = await bitbucket.paginate<{ status: string; lines_added?: number; lines_removed?: number; old?: { path: string }; new?: { path: string } }>(
+    const { values } = await bitbucket.paginate(
       `/repositories/${args.workspace}/${args.repoSlug}/diffstat/${args.spec}`,
       undefined,
       200,
+      DiffStatEntrySchema,
     );
     const text = values.map((d) => `${d.status} ${d.new?.path ?? d.old?.path} (+${d.lines_added ?? 0}/-${d.lines_removed ?? 0})`).join("\n");
     return okResult({ files: values }, text || "No changes.");
@@ -81,7 +82,12 @@ const commitListStatuses = defineTool({
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const { values } = await bitbucket.paginate<CommitStatus>(`/repositories/${args.workspace}/${args.repoSlug}/commit/${args.commit}/statuses`, undefined, 50);
+    const { values } = await bitbucket.paginate(
+      `/repositories/${args.workspace}/${args.repoSlug}/commit/${args.commit}/statuses`,
+      undefined,
+      50,
+      CommitStatusSchema,
+    );
     const text = values.map((s) => `${s.state} ${s.key}${s.description ? ` - ${s.description}` : ""}`).join("\n");
     return okResult({ statuses: values }, text || "No statuses.");
   }),

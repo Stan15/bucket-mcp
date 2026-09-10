@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { CredentialProvider } from "../credentials.js";
 
 /**
@@ -35,16 +36,24 @@ const BASE_URL = "https://api.bitbucket.org/2.0";
 export class BitbucketClient {
   constructor(private readonly credentials: CredentialProvider) {}
 
-  get<T>(path: string, query?: Record<string, QueryValue>): Promise<T> {
-    return this.request<T>("GET", path, { query });
+  /**
+   * `schema`, when passed, runtime-validates the response against a Zod
+   * schema from bitbucket/types.ts (schema.parse()) instead of just trusting
+   * the type parameter - catches Bitbucket API drift at the point it
+   * happens rather than surfacing as a confusing `undefined` somewhere deep
+   * in a tool handler. Purely internal: these schemas are never passed to
+   * registerTool's outputSchema, so this costs nothing in wire tokens.
+   */
+  get<T>(path: string, query?: Record<string, QueryValue>, schema?: z.ZodType<T>): Promise<T> {
+    return this.request<T>("GET", path, { query, schema });
   }
 
-  post<T>(path: string, body?: unknown, query?: Record<string, QueryValue>): Promise<T> {
-    return this.request<T>("POST", path, { body, query });
+  post<T>(path: string, body?: unknown, query?: Record<string, QueryValue>, schema?: z.ZodType<T>): Promise<T> {
+    return this.request<T>("POST", path, { body, query, schema });
   }
 
-  put<T>(path: string, body?: unknown, query?: Record<string, QueryValue>): Promise<T> {
-    return this.request<T>("PUT", path, { body, query });
+  put<T>(path: string, body?: unknown, query?: Record<string, QueryValue>, schema?: z.ZodType<T>): Promise<T> {
+    return this.request<T>("PUT", path, { body, query, schema });
   }
 
   delete<T = void>(path: string, query?: Record<string, QueryValue>): Promise<T> {
@@ -74,18 +83,20 @@ export class BitbucketClient {
     path: string,
     query: Record<string, QueryValue> | undefined,
     maxItems: number,
+    itemSchema?: z.ZodType<T>,
   ): Promise<{ values: T[]; hasMore: boolean }> {
     let next: string | undefined = path;
     let isFirst = true;
     const values: T[] = [];
 
     while (next && values.length < maxItems) {
-      const page: PaginatedResponse<T> = await this.request<PaginatedResponse<T>>(
+      const page: PaginatedResponse<unknown> = await this.request<PaginatedResponse<unknown>>(
         "GET",
         next,
         isFirst ? { query } : undefined,
       );
-      values.push(...page.values);
+      const pageValues: unknown[] = page.values;
+      values.push(...(itemSchema ? pageValues.map((v) => itemSchema.parse(v)) : (pageValues as T[])));
       next = page.next;
       isFirst = false;
     }
@@ -96,7 +107,7 @@ export class BitbucketClient {
   private async request<T>(
     method: string,
     path: string,
-    options?: { query?: Record<string, QueryValue>; body?: unknown },
+    options?: { query?: Record<string, QueryValue>; body?: unknown; schema?: z.ZodType<T> },
   ): Promise<T> {
     return (await this.requestRaw<T>(method, path, options)).body;
   }
@@ -104,7 +115,7 @@ export class BitbucketClient {
   private async requestRaw<T>(
     method: string,
     path: string,
-    options?: { query?: Record<string, QueryValue>; body?: unknown },
+    options?: { query?: Record<string, QueryValue>; body?: unknown; schema?: z.ZodType<T> },
   ): Promise<{ body: T; response: Response }> {
     const url = new URL(path.startsWith("http") ? path : `${BASE_URL}${path}`);
     if (options?.query) {
@@ -140,7 +151,8 @@ export class BitbucketClient {
       // diff/patch endpoints return text/plain
       return { body: (await response.text()) as unknown as T, response };
     }
-    return { body: (await response.json()) as T, response };
+    const json = await response.json();
+    return { body: options?.schema ? options.schema.parse(json) : (json as T), response };
   }
 
   private async toApiError(response: Response): Promise<BitbucketApiError> {

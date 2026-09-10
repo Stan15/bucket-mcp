@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Repository } from "../bitbucket/types.js";
+import { Repository, RepositorySchema } from "../bitbucket/types.js";
 import { defineTool, ToolSpec } from "./index.js";
 import { okResult, withErrorHandling } from "./toolHelpers.js";
 
@@ -22,10 +22,11 @@ const repositoryList = defineTool({
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const { values, hasMore } = await bitbucket.paginate<Repository>(
+    const { values, hasMore } = await bitbucket.paginate(
       `/repositories/${args.workspace}`,
       { q: args.query, fields: REPO_FIELDS, pagelen: Math.min(args.maxItems, 50) },
       args.maxItems,
+      RepositorySchema,
     );
     const text = values.map(summarizeRepo).join("\n") + (hasMore ? "\n(more results available)" : "");
     return okResult({ repositories: values, hasMore }, text || "No repositories found.");
@@ -40,7 +41,7 @@ const repositoryGet = defineTool({
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
   handler: withErrorHandling(async (args, { bitbucket }) => {
-    const repo = await bitbucket.get<Repository>(`/repositories/${args.workspace}/${args.repoSlug}`, { fields: REPO_FULL_FIELDS });
+    const repo = await bitbucket.get(`/repositories/${args.workspace}/${args.repoSlug}`, { fields: REPO_FULL_FIELDS }, RepositorySchema);
     return okResult({ repository: repo }, summarizeRepo(repo));
   }),
 });

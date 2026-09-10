@@ -1,84 +1,114 @@
-/** Minimal response shapes - only the fields tools actually request via `fields=` (see fields.ts). */
+import { z } from "zod";
 
-export interface User {
-  uuid: string;
-  display_name: string;
-  nickname?: string;
-}
+/**
+ * Response shapes as Zod schemas rather than plain interfaces - lets every
+ * tool handler both get a compile-time type (via z.infer, used the same way
+ * a plain interface would be) and optionally runtime-validate what Bitbucket
+ * actually returned (via schema.parse(), see bitbucket/client.ts's `schema`
+ * option). None of these are passed to registerTool's outputSchema - they
+ * never reach the wire, so they cost nothing in tokens (see
+ * mcp-best-practices.md's outputSchema discussion for why that was dropped).
+ *
+ * Deliberately narrow - only the fields tools actually request via `fields=`.
+ */
 
-export interface Repository {
-  uuid: string;
-  name: string;
-  full_name: string;
-  slug?: string;
-  description?: string;
-  is_private?: boolean;
-  mainbranch?: { name: string };
-  links?: { html?: { href: string } };
-}
+export const UserSchema = z.object({
+  // uuid is optional: nested user summaries (PR author/reviewers/comment
+  // author) are deliberately trimmed via `fields=` to just display_name for
+  // token economy - uuid is only present when a user is fetched directly.
+  uuid: z.string().optional(),
+  display_name: z.string(),
+  nickname: z.string().optional(),
+});
+export type User = z.infer<typeof UserSchema>;
 
-export interface Branch {
-  name: string;
-  target?: { hash: string; date?: string };
-}
+export const RepositorySchema = z.object({
+  uuid: z.string(),
+  name: z.string(),
+  full_name: z.string(),
+  slug: z.string().optional(),
+  description: z.string().optional(),
+  is_private: z.boolean().optional(),
+  mainbranch: z.object({ name: z.string() }).optional(),
+  links: z.object({ html: z.object({ href: z.string() }).optional() }).optional(),
+});
+export type Repository = z.infer<typeof RepositorySchema>;
 
-export interface Tag {
-  name: string;
-  target?: { hash: string };
-}
+export const BranchSchema = z.object({
+  name: z.string(),
+  target: z.object({ hash: z.string(), date: z.string().optional() }).optional(),
+});
+export type Branch = z.infer<typeof BranchSchema>;
 
-export interface Commit {
-  hash: string;
-  message: string;
-  date: string;
-  author?: { user?: User; raw?: string };
-  links?: { html?: { href: string } };
-}
+export const TagSchema = z.object({
+  name: z.string(),
+  target: z.object({ hash: z.string() }).optional(),
+});
+export type Tag = z.infer<typeof TagSchema>;
 
-export interface CommitStatus {
-  key: string;
-  name?: string;
-  state: "SUCCESSFUL" | "FAILED" | "INPROGRESS" | "STOPPED";
-  url?: string;
-  description?: string;
-}
+export const CommitSchema = z.object({
+  hash: z.string(),
+  message: z.string(),
+  date: z.string(),
+  author: z.object({ user: UserSchema.optional(), raw: z.string().optional() }).optional(),
+  links: z.object({ html: z.object({ href: z.string() }).optional() }).optional(),
+});
+export type Commit = z.infer<typeof CommitSchema>;
 
-export type PullRequestState = "OPEN" | "MERGED" | "DECLINED" | "SUPERSEDED";
+export const CommitStatusSchema = z.object({
+  key: z.string(),
+  name: z.string().optional(),
+  state: z.enum(["SUCCESSFUL", "FAILED", "INPROGRESS", "STOPPED"]),
+  url: z.string().optional(),
+  description: z.string().optional(),
+});
+export type CommitStatus = z.infer<typeof CommitStatusSchema>;
 
-export interface PullRequest {
-  id: number;
-  title: string;
-  description?: string;
-  state: PullRequestState;
-  author?: User;
-  source?: { branch: { name: string } };
-  destination?: { branch: { name: string } };
-  reviewers?: User[];
-  participants?: { user: User; approved: boolean; state: string | null }[];
-  created_on?: string;
-  updated_on?: string;
-  links?: { html?: { href: string } };
-}
+export const PullRequestStateSchema = z.enum(["OPEN", "MERGED", "DECLINED", "SUPERSEDED"]);
+export type PullRequestState = z.infer<typeof PullRequestStateSchema>;
 
-export interface Comment {
-  id: number;
-  content: { raw: string };
-  user?: User;
-  inline?: { path: string; to?: number; from?: number };
-  created_on?: string;
-  deleted?: boolean;
-}
+export const PullRequestSchema = z.object({
+  id: z.number(),
+  title: z.string(),
+  description: z.string().optional(),
+  state: PullRequestStateSchema,
+  author: UserSchema.optional(),
+  source: z.object({ branch: z.object({ name: z.string() }) }).optional(),
+  destination: z.object({ branch: z.object({ name: z.string() }) }).optional(),
+  reviewers: z.array(UserSchema).optional(),
+  participants: z.array(z.object({ user: UserSchema, approved: z.boolean(), state: z.string().nullable() })).optional(),
+  created_on: z.string().optional(),
+  updated_on: z.string().optional(),
+  links: z.object({ html: z.object({ href: z.string() }).optional() }).optional(),
+});
+export type PullRequest = z.infer<typeof PullRequestSchema>;
 
-export interface DiffStatEntry {
-  status: "added" | "removed" | "modified" | "renamed";
-  lines_added?: number;
-  lines_removed?: number;
-  old?: { path: string };
-  new?: { path: string };
-}
+export const CommentSchema = z.object({
+  id: z.number(),
+  content: z.object({ raw: z.string() }),
+  user: UserSchema.optional(),
+  inline: z.object({ path: z.string(), to: z.number().optional(), from: z.number().optional() }).optional(),
+  created_on: z.string().optional(),
+  deleted: z.boolean().optional(),
+});
+export type Comment = z.infer<typeof CommentSchema>;
 
-export interface CodeSearchResult {
-  path_matches?: { path: string }[];
-  file: { path: string };
-  content_matches: { lines: { line: number; segments: { text: string; match?: boolean }[] }[] }[];
-}
+export const DiffStatEntrySchema = z.object({
+  status: z.enum(["added", "removed", "modified", "renamed"]),
+  lines_added: z.number().optional(),
+  lines_removed: z.number().optional(),
+  old: z.object({ path: z.string() }).optional(),
+  new: z.object({ path: z.string() }).optional(),
+});
+export type DiffStatEntry = z.infer<typeof DiffStatEntrySchema>;
+
+export const CodeSearchResultSchema = z.object({
+  path_matches: z.array(z.object({ path: z.string() })).optional(),
+  file: z.object({ path: z.string() }),
+  content_matches: z.array(
+    z.object({
+      lines: z.array(z.object({ line: z.number(), segments: z.array(z.object({ text: z.string(), match: z.boolean().optional() })) })),
+    }),
+  ),
+});
+export type CodeSearchResult = z.infer<typeof CodeSearchResultSchema>;

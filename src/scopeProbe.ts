@@ -47,17 +47,38 @@ export async function probeGrantedScopes(client: BitbucketClient): Promise<Scope
 }
 
 /**
+ * Operator-configured ceiling (design decision B), independent of and
+ * layered on top of whatever the scope probe found:
+ * - "readonly": no write/destructive tool of any kind, draft or not.
+ * - "draft": only tools whose write is enforced-non-live (a draft PR, a
+ *   pending comment) - see writeLevel below. Nothing that's ever live the
+ *   moment it runs.
+ * - "readwrite": everything the credential's actual scopes allow (default).
+ */
+export type Mode = "readonly" | "draft" | "readwrite";
+
+/**
+ * What a tool actually does to Bitbucket:
+ * - "read": never writes.
+ * - "draft": writes, but the result is enforced non-live (forced
+ *   draft:true / pending:true, no way for the caller to override it - see
+ *   tools/pullRequests.ts's *Draft tool variants).
+ * - "write": a live mutation, or destructive, or both.
+ */
+export type ToolWriteLevel = "read" | "draft" | "write";
+
+/**
  * Should a tool requiring `requiredScope` be registered, given the probe
- * result and the operator's readonly override (design decision B, always
- * independent of and layered on top of whatever the probe found)?
+ * result and the operator's mode ceiling?
  */
 export function isToolAllowed(
   probe: ScopeProbeResult,
   requiredScope: string,
-  isWriteOrDestructive: boolean,
-  readOnly: boolean,
+  writeLevel: ToolWriteLevel,
+  mode: Mode,
 ): boolean {
-  if (readOnly && isWriteOrDestructive) return false;
+  if (mode === "readonly" && writeLevel !== "read") return false;
+  if (mode === "draft" && writeLevel === "write") return false;
   if (probe.kind === "unknown") return true; // fail open
   return probe.scopes.has(requiredScope);
 }

@@ -47,7 +47,7 @@ const pullRequestList = defineTool({
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:pullrequest:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -69,7 +69,7 @@ const pullRequestGet = defineTool({
   inputSchema: { ...workspaceRepo, id: z.number().int() },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:pullrequest:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -82,20 +82,30 @@ const pullRequestGet = defineTool({
   }),
 });
 
-const pullRequestCreate = defineTool({
+const pullRequestCreateFields = {
+  ...workspaceRepo,
+  title: z.string(),
+  sourceBranch: z.string(),
+  destinationBranch: z.string().optional().describe("Defaults to the repository's main branch"),
+  description: z.string().optional(),
+  reviewers: z.array(z.string()).optional().describe("Reviewer account UUIDs or nicknames"),
+};
+
+/**
+ * Draft-mode variant: no `draft` parameter exists in this schema at all -
+ * not defaulted, not optional-but-overridable, genuinely absent, so there is
+ * no way for a caller to request a live PR through this tool. Draft mode's
+ * whole point is that the write surface doesn't even expose the option (see
+ * scopeProbe.ts's Mode/ToolWriteLevel and server.ts's registration filter).
+ */
+const pullRequestCreateDraft = defineTool({
   name: "bitbucket_pull_request_create",
-  description: "Create a new pull request.",
-  inputSchema: {
-    ...workspaceRepo,
-    title: z.string(),
-    sourceBranch: z.string(),
-    destinationBranch: z.string().optional().describe("Defaults to the repository's main branch"),
-    description: z.string().optional(),
-    reviewers: z.array(z.string()).optional().describe("Reviewer account UUIDs or nicknames"),
-  },
+  description: "Create a new pull request as a draft - visible to teammates, but marked not-yet-ready-for-review until someone marks it ready in Bitbucket.",
+  inputSchema: pullRequestCreateFields,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   requiredScope: "write:pullrequest:bitbucket",
-  isWriteOrDestructive: true,
+  writeLevel: "draft",
+  onlyInModes: ["draft"],
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -107,6 +117,43 @@ const pullRequestCreate = defineTool({
         source: { branch: { name: args.sourceBranch } },
         destination: args.destinationBranch ? { branch: { name: args.destinationBranch } } : undefined,
         reviewers: args.reviewers?.map((uuid) => ({ uuid })),
+        draft: true,
+      },
+      undefined,
+      PullRequestSchema,
+    );
+    return okResult({ pullRequest: pr }, `Created draft ${summarizePr(pr)}\n${pr.links?.html?.href ?? ""}`);
+  }),
+});
+
+const pullRequestCreate = defineTool({
+  name: "bitbucket_pull_request_create",
+  description: "Create a new pull request.",
+  inputSchema: {
+    ...pullRequestCreateFields,
+    draft: z
+      .boolean()
+      .default(true)
+      .describe("Draft PRs are visible to teammates but marked not-yet-ready-for-review until marked ready in Bitbucket. Pass false to open it as ready for review immediately."),
+    closeSourceBranch: z.boolean().optional().describe("Whether the source branch should be deleted once this PR is merged"),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  requiredScope: "write:pullrequest:bitbucket",
+  writeLevel: "write",
+  onlyInModes: ["readwrite"],
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const { bitbucket } = context;
+    const pr = await bitbucket.post(
+      `/repositories/${workspace}/${args.repoSlug}/pullrequests`,
+      {
+        title: args.title,
+        description: args.description,
+        source: { branch: { name: args.sourceBranch } },
+        destination: args.destinationBranch ? { branch: { name: args.destinationBranch } } : undefined,
+        reviewers: args.reviewers?.map((uuid) => ({ uuid })),
+        draft: args.draft,
+        close_source_branch: args.closeSourceBranch,
       },
       undefined,
       PullRequestSchema,
@@ -127,7 +174,7 @@ const pullRequestUpdate = defineTool({
   },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   requiredScope: "write:pullrequest:bitbucket",
-  isWriteOrDestructive: true,
+  writeLevel: "write",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -151,7 +198,7 @@ const pullRequestApprove = defineTool({
   inputSchema: { ...workspaceRepo, id: z.number().int() },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   requiredScope: "write:pullrequest:bitbucket",
-  isWriteOrDestructive: true,
+  writeLevel: "write",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -174,7 +221,7 @@ const pullRequestUnapprove = defineTool({
   inputSchema: { ...workspaceRepo, id: z.number().int() },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   requiredScope: "write:pullrequest:bitbucket",
-  isWriteOrDestructive: true,
+  writeLevel: "write",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -189,7 +236,7 @@ const pullRequestRequestChanges = defineTool({
   inputSchema: { ...workspaceRepo, id: z.number().int() },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   requiredScope: "write:pullrequest:bitbucket",
-  isWriteOrDestructive: true,
+  writeLevel: "write",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -209,7 +256,7 @@ const pullRequestRemoveRequestChanges = defineTool({
   inputSchema: { ...workspaceRepo, id: z.number().int() },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   requiredScope: "write:pullrequest:bitbucket",
-  isWriteOrDestructive: true,
+  writeLevel: "write",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -224,7 +271,7 @@ const pullRequestDecline = defineTool({
   inputSchema: { ...workspaceRepo, id: z.number().int() },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
   requiredScope: "write:pullrequest:bitbucket",
-  isWriteOrDestructive: true,
+  writeLevel: "write",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -289,18 +336,26 @@ const pullRequestMerge = defineTool({
   inputSchema: {
     ...workspaceRepo,
     id: z.number().int(),
-    strategy: z.enum(["merge_commit", "squash", "fast_forward"]).default("merge_commit"),
+    strategy: z
+      .enum(["merge_commit", "squash", "fast_forward", "squash_fast_forward", "rebase_fast_forward", "rebase_merge"])
+      .default("merge_commit"),
+    message: z.string().optional().describe("Commit message for the merge; defaults to Bitbucket's own generated message"),
+    closeSourceBranch: z.boolean().optional().describe("Delete the source branch after merging; defaults to whatever was set when the PR was created"),
   },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
   requiredScope: "write:pullrequest:bitbucket",
-  isWriteOrDestructive: true,
+  writeLevel: "write",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
     const path = `/repositories/${workspace}/${args.repoSlug}/pullrequests/${args.id}/merge`;
 
     try {
-      const { body, response } = await bitbucket.postWithResponse<unknown>(path, { merge_strategy: args.strategy });
+      const { body, response } = await bitbucket.postWithResponse<unknown>(path, {
+        merge_strategy: args.strategy,
+        message: args.message,
+        close_source_branch: args.closeSourceBranch,
+      });
 
       if (response.status === 200) {
         const pr = PullRequestSchema.parse(body);
@@ -348,7 +403,7 @@ const pullRequestMergeStatus = defineTool({
   inputSchema: { ...workspaceRepo, id: z.number().int(), taskId: z.string() },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:pullrequest:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -370,7 +425,7 @@ const pullRequestDiffstat = defineTool({
   inputSchema: { ...workspaceRepo, id: z.number().int() },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:pullrequest:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -397,7 +452,7 @@ const pullRequestDiff = defineTool({
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:pullrequest:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -408,19 +463,30 @@ const pullRequestDiff = defineTool({
   }),
 });
 
-const pullRequestCommentCreate = defineTool({
+const pullRequestCommentCreateFields = {
+  ...workspaceRepo,
+  id: z.number().int(),
+  body: z.string(),
+  inlinePath: z.string().optional(),
+  inlineLine: z.number().int().optional(),
+};
+
+/**
+ * Draft-mode variant: no `pending` parameter in this schema - unlike a
+ * draft PR (still visible to teammates, just marked not-ready), a pending
+ * comment is genuinely invisible to everyone but its author until they
+ * submit their review in Bitbucket's own UI. Enforced true here, not
+ * offered as a choice, matching draft mode's whole point.
+ */
+const pullRequestCommentCreateDraft = defineTool({
   name: "bitbucket_pull_request_comment_create",
-  description: "Add a comment to a pull request, optionally anchored to a specific file/line.",
-  inputSchema: {
-    ...workspaceRepo,
-    id: z.number().int(),
-    body: z.string(),
-    inlinePath: z.string().optional(),
-    inlineLine: z.number().int().optional(),
-  },
+  description:
+    "Add a comment to a pull request as pending - invisible to everyone but you until you submit your review in Bitbucket's own UI.",
+  inputSchema: pullRequestCommentCreateFields,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   requiredScope: "write:pullrequest:bitbucket",
-  isWriteOrDestructive: true,
+  writeLevel: "draft",
+  onlyInModes: ["draft"],
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -429,6 +495,38 @@ const pullRequestCommentCreate = defineTool({
       {
         content: { raw: args.body },
         inline: args.inlinePath ? { path: args.inlinePath, to: args.inlineLine } : undefined,
+        pending: true,
+      },
+      undefined,
+      CommentSchema,
+    );
+    return okResult({ comment }, `Added pending comment to PR #${args.id} - only visible to you until you submit your review in Bitbucket.`);
+  }),
+});
+
+const pullRequestCommentCreate = defineTool({
+  name: "bitbucket_pull_request_comment_create",
+  description: "Add a comment to a pull request, optionally anchored to a specific file/line.",
+  inputSchema: {
+    ...pullRequestCommentCreateFields,
+    pending: z
+      .boolean()
+      .default(true)
+      .describe("Pending comments are invisible to everyone but you until you submit your review in Bitbucket's own UI. Pass false to post it live immediately."),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  requiredScope: "write:pullrequest:bitbucket",
+  writeLevel: "write",
+  onlyInModes: ["readwrite"],
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const { bitbucket } = context;
+    const comment = await bitbucket.post(
+      `/repositories/${workspace}/${args.repoSlug}/pullrequests/${args.id}/comments`,
+      {
+        content: { raw: args.body },
+        inline: args.inlinePath ? { path: args.inlinePath, to: args.inlineLine } : undefined,
+        pending: args.pending,
       },
       undefined,
       CommentSchema,
@@ -443,7 +541,7 @@ const pullRequestCommentList = defineTool({
   inputSchema: { ...workspaceRepo, id: z.number().int(), maxItems: z.number().int().min(1).max(100).default(50) },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:pullrequest:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -465,7 +563,7 @@ const pullRequestCommentResolve = defineTool({
   inputSchema: { ...workspaceRepo, id: z.number().int(), commentId: z.number().int() },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   requiredScope: "write:pullrequest:bitbucket",
-  isWriteOrDestructive: true,
+  writeLevel: "write",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -485,7 +583,7 @@ const pullRequestCommentReopen = defineTool({
   inputSchema: { ...workspaceRepo, id: z.number().int(), commentId: z.number().int() },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   requiredScope: "write:pullrequest:bitbucket",
-  isWriteOrDestructive: true,
+  writeLevel: "write",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -500,7 +598,7 @@ const pullRequestListStatuses = defineTool({
   inputSchema: { ...workspaceRepo, id: z.number().int() },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:pullrequest:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -515,13 +613,64 @@ const pullRequestListStatuses = defineTool({
   }),
 });
 
+const pullRequestTaskCreateFields = { ...workspaceRepo, id: z.number().int(), content: z.string() };
+
+/** Draft-mode variant - same reasoning as pullRequestCommentCreateDraft: a pending task is invisible to everyone but its author until submitted, so there's no `pending` parameter here at all. */
+const pullRequestTaskCreateDraft = defineTool({
+  name: "bitbucket_pull_request_task_create",
+  description: "Add a checklist task to a pull request as pending - invisible to everyone but you until you submit your review in Bitbucket's own UI.",
+  inputSchema: pullRequestTaskCreateFields,
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  requiredScope: "write:pullrequest:bitbucket",
+  writeLevel: "draft",
+  onlyInModes: ["draft"],
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const { bitbucket } = context;
+    const task = await bitbucket.post(
+      `/repositories/${workspace}/${args.repoSlug}/pullrequests/${args.id}/tasks`,
+      { content: { raw: args.content }, pending: true },
+      undefined,
+      TaskSchema,
+    );
+    return okResult({ task }, `Added pending task to PR #${args.id} - only visible to you until you submit your review in Bitbucket.`);
+  }),
+});
+
+const pullRequestTaskCreate = defineTool({
+  name: "bitbucket_pull_request_task_create",
+  description: "Add a checklist task to a pull request.",
+  inputSchema: {
+    ...pullRequestTaskCreateFields,
+    pending: z
+      .boolean()
+      .default(true)
+      .describe("Pending tasks are invisible to everyone but you until you submit your review in Bitbucket's own UI. Pass false to post it live immediately."),
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  requiredScope: "write:pullrequest:bitbucket",
+  writeLevel: "write",
+  onlyInModes: ["readwrite"],
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const { bitbucket } = context;
+    const task = await bitbucket.post(
+      `/repositories/${workspace}/${args.repoSlug}/pullrequests/${args.id}/tasks`,
+      { content: { raw: args.content }, pending: args.pending },
+      undefined,
+      TaskSchema,
+    );
+    return okResult({ task }, `Added task to PR #${args.id}.`);
+  }),
+});
+
 const pullRequestTaskList = defineTool({
   name: "bitbucket_pull_request_task_list",
   description: "List a pull request's checklist tasks (what PullRequestSchema.task_count counts) - distinct from comments.",
   inputSchema: { ...workspaceRepo, id: z.number().int() },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:pullrequest:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -542,7 +691,7 @@ const pullRequestTaskResolve = defineTool({
   inputSchema: { ...workspaceRepo, id: z.number().int(), taskId: z.number().int() },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   requiredScope: "write:pullrequest:bitbucket",
-  isWriteOrDestructive: true,
+  writeLevel: "write",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -559,6 +708,7 @@ const pullRequestTaskResolve = defineTool({
 export const pullRequestTools: ToolSpec[] = [
   pullRequestList,
   pullRequestGet,
+  pullRequestCreateDraft,
   pullRequestCreate,
   pullRequestUpdate,
   pullRequestApprove,
@@ -570,11 +720,14 @@ export const pullRequestTools: ToolSpec[] = [
   pullRequestMergeStatus,
   pullRequestDiffstat,
   pullRequestDiff,
+  pullRequestCommentCreateDraft,
   pullRequestCommentCreate,
   pullRequestCommentList,
   pullRequestCommentResolve,
   pullRequestCommentReopen,
   pullRequestListStatuses,
+  pullRequestTaskCreateDraft,
+  pullRequestTaskCreate,
   pullRequestTaskList,
   pullRequestTaskResolve,
 ];

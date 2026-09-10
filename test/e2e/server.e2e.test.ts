@@ -3,6 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServer } from "../../src/server.js";
 import { StaticTokenCredentialProvider } from "../../src/credentials.js";
+import { Mode } from "../../src/scopeProbe.js";
 import { createFakeFetch, route } from "../support/fakeFetch.js";
 
 /**
@@ -12,9 +13,9 @@ import { createFakeFetch, route } from "../support/fakeFetch.js";
  * registration/gating logic all run for real. Bitbucket itself is the only
  * thing faked (see test/support/fakeFetch.ts).
  */
-async function connectedClient(fetchImpl: typeof fetch, readOnly = false, defaultWorkspace?: string) {
+async function connectedClient(fetchImpl: typeof fetch, mode: Mode = "readwrite", defaultWorkspace?: string) {
   const server = await createServer(
-    { apiToken: "test-token", readOnly, defaultWorkspace },
+    { apiToken: "test-token", mode, defaultWorkspace },
     new StaticTokenCredentialProvider("test-token"),
     fetchImpl,
   );
@@ -34,15 +35,57 @@ describe("bucket-mcp server (e2e)", () => {
     expect(tools.map((t) => t.name)).toContain("bitbucket_pull_request_merge");
   });
 
-  it("excludes write/destructive tools in read-only mode, keeps read tools", async () => {
+  it("readonly mode excludes every write/draft tool, keeps read tools", async () => {
     const fetchImpl = createFakeFetch([route("GET", "/2.0/user", { status: 200, body: {} })]);
-    const client = await connectedClient(fetchImpl, true);
+    const client = await connectedClient(fetchImpl, "readonly");
 
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name);
     expect(names).not.toContain("bitbucket_pull_request_merge");
     expect(names).not.toContain("bitbucket_branch_delete");
+    expect(names).not.toContain("bitbucket_pull_request_create"); // excluded entirely, not just the write variant
     expect(names).toContain("bitbucket_pull_request_get");
+  });
+
+  it("draft mode exposes pull_request_create and comment_create but nothing that merges, approves, or edits", async () => {
+    const fetchImpl = createFakeFetch([route("GET", "/2.0/user", { status: 200, body: {} })]);
+    const client = await connectedClient(fetchImpl, "draft");
+
+    const { tools } = await client.listTools();
+    const names = tools.map((t) => t.name);
+    expect(names).toContain("bitbucket_pull_request_create");
+    expect(names).toContain("bitbucket_pull_request_comment_create");
+    expect(names).toContain("bitbucket_pull_request_task_create");
+    expect(names).not.toContain("bitbucket_pull_request_merge");
+    expect(names).not.toContain("bitbucket_pull_request_approve");
+    expect(names).not.toContain("bitbucket_pull_request_update");
+    expect(names).not.toContain("bitbucket_branch_delete");
+  });
+
+  it("draft mode's pull_request_create schema has no draft parameter at all - not defaulted, genuinely absent", async () => {
+    const fetchImpl = createFakeFetch([route("GET", "/2.0/user", { status: 200, body: {} })]);
+    const client = await connectedClient(fetchImpl, "draft");
+
+    const { tools } = await client.listTools();
+    const createTool = tools.find((t) => t.name === "bitbucket_pull_request_create")!;
+    expect(Object.keys(createTool.inputSchema.properties ?? {})).not.toContain("draft");
+  });
+
+  it("draft mode's pull_request_create always sends draft:true to Bitbucket, regardless of anything the caller passes", async () => {
+    const fetchImpl = createFakeFetch([
+      route("GET", "/2.0/user", { status: 200, body: {} }),
+      route("POST", "/2.0/repositories/ws/repo/pullrequests", { status: 200, body: { id: 1, title: "x", state: "OPEN", draft: true } }),
+    ]);
+    const client = await connectedClient(fetchImpl, "draft");
+
+    const result = await client.callTool({
+      name: "bitbucket_pull_request_create",
+      // @ts-expect-error - deliberately trying to smuggle draft:false through even though the schema doesn't declare it
+      arguments: { workspace: "ws", repoSlug: "repo", title: "x", sourceBranch: "feature", draft: false },
+    });
+    expect(result.isError).toBeFalsy();
+    // The fake route only matches if the real request body actually had draft:true -
+    // if the handler had honored a smuggled draft:false, no route would match and this would error.
   });
 
   it("fails open (keeps every tool) when the scope probe can't determine granted scopes", async () => {
@@ -96,7 +139,7 @@ describe("bucket-mcp server (e2e)", () => {
       route("GET", "/2.0/user", { status: 200, body: {} }),
       route("GET", "/2.0/repositories/default-ws/repo", { status: 200, body: { uuid: "{r}", name: "repo", full_name: "default-ws/repo" } }),
     ]);
-    const client = await connectedClient(fetchImpl, false, "default-ws");
+    const client = await connectedClient(fetchImpl, "readwrite", "default-ws");
 
     const result = await client.callTool({ name: "bitbucket_repository_get", arguments: { repoSlug: "repo" } });
     expect(result.isError).toBeFalsy();

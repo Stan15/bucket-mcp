@@ -36,7 +36,7 @@ const sourceGet = defineTool({
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;

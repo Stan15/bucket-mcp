@@ -28,23 +28,34 @@ describe("isToolAllowed", () => {
   const unknown = { kind: "unknown" as const };
 
   it("allows a read tool when the known scope set contains it", () => {
-    expect(isToolAllowed(known, "read:pullrequest:bitbucket", false, false)).toBe(true);
+    expect(isToolAllowed(known, "read:pullrequest:bitbucket", "read", "readwrite")).toBe(true);
   });
 
   it("denies a tool when the known scope set doesn't contain it", () => {
-    expect(isToolAllowed(known, "write:pullrequest:bitbucket", true, false)).toBe(false);
+    expect(isToolAllowed(known, "write:pullrequest:bitbucket", "write", "readwrite")).toBe(false);
   });
 
   it("fails open (allows) whenever the probe is inconclusive, regardless of the tool's scope", () => {
-    expect(isToolAllowed(unknown, "write:repository:bitbucket", true, false)).toBe(true);
+    expect(isToolAllowed(unknown, "write:repository:bitbucket", "write", "readwrite")).toBe(true);
   });
 
-  it("readOnly denies any write/destructive tool independent of scope knowledge", () => {
-    expect(isToolAllowed(known, "read:pullrequest:bitbucket", true, true)).toBe(false);
-    expect(isToolAllowed(unknown, "read:pullrequest:bitbucket", true, true)).toBe(false);
+  it("readonly mode denies any write or draft tool, independent of scope knowledge", () => {
+    expect(isToolAllowed(known, "write:pullrequest:bitbucket", "write", "readonly")).toBe(false);
+    expect(isToolAllowed(known, "write:pullrequest:bitbucket", "draft", "readonly")).toBe(false);
+    expect(isToolAllowed(unknown, "write:pullrequest:bitbucket", "write", "readonly")).toBe(false);
   });
 
-  it("readOnly does not affect non-destructive tools", () => {
-    expect(isToolAllowed(known, "read:pullrequest:bitbucket", false, true)).toBe(true);
+  it("readonly mode does not affect read tools", () => {
+    expect(isToolAllowed(known, "read:pullrequest:bitbucket", "read", "readonly")).toBe(true);
+  });
+
+  it("draft mode allows draft tools but denies full write tools, independent of scope knowledge", () => {
+    expect(isToolAllowed(known, "write:pullrequest:bitbucket", "draft", "draft")).toBe(false); // known doesn't have this scope
+    expect(isToolAllowed(unknown, "write:pullrequest:bitbucket", "draft", "draft")).toBe(true); // fails open
+    expect(isToolAllowed(unknown, "write:pullrequest:bitbucket", "write", "draft")).toBe(false); // draft mode blocks write regardless
+  });
+
+  it("draft mode does not affect read tools", () => {
+    expect(isToolAllowed(known, "read:pullrequest:bitbucket", "read", "draft")).toBe(true);
   });
 });

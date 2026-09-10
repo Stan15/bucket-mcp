@@ -139,6 +139,11 @@ export const CommentSchema = z.object({
   inline: z.object({ path: z.string(), to: z.number().nullish(), from: z.number().nullish() }).optional(),
   created_on: z.string().optional(),
   deleted: z.boolean().optional(),
+  // Genuinely private, not just "unpublished" the way a draft PR still is:
+  // a pending comment is invisible to everyone but its author until they
+  // submit their review in Bitbucket - confirmed via the official
+  // "batched comments" feature announcement (see tools/pullRequests.ts).
+  pending: z.boolean().optional(),
 });
 export type Comment = z.infer<typeof CommentSchema>;
 

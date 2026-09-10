@@ -18,7 +18,7 @@ const commitList = defineTool({
   inputSchema: { ...workspaceRepo, revision: z.string().optional().describe("Branch, tag, or commit to list from"), maxItems: z.number().int().min(1).max(100).default(25) },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -37,7 +37,7 @@ const commitGet = defineTool({
   inputSchema: { ...workspaceRepo, commit: z.string() },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -52,7 +52,7 @@ const commitDiffstat = defineTool({
   inputSchema: { ...workspaceRepo, spec: z.string().describe("A commit hash, or 'base..head' range") },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -73,7 +73,7 @@ const commitDiff = defineTool({
   inputSchema: { ...workspaceRepo, spec: z.string(), path: z.string().optional() },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -88,7 +88,7 @@ const commitListStatuses = defineTool({
   inputSchema: { ...workspaceRepo, commit: z.string() },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;

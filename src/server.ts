@@ -45,19 +45,29 @@ export async function createServer(
     ? `Default workspace is "${config.defaultWorkspace}" - omit \`workspace\` on any tool to use it, or pass one explicitly to target a different workspace (use bitbucket_workspace_list to discover options).`
     : "No default workspace is configured, so `workspace` is required on every call - use bitbucket_workspace_list to discover which workspaces are available.";
 
+  const modeInstructions =
+    config.mode === "draft"
+      ? "Draft mode: PRs and comments/tasks you create are enforced non-live (a draft PR is visible to teammates but marked not-ready-for-review; a pending comment/task is invisible to everyone but you until the human submits their review in Bitbucket). No tool here can merge, approve, edit an existing PR, or otherwise publish anything - that step is deliberately left to a human, in Bitbucket's own UI."
+      : config.mode === "readonly"
+        ? "Read-only mode: no write or destructive tool of any kind is available."
+        : "Full write access is enabled, including irreversible actions (merge, decline, delete). PRs and comments/tasks you create still default to draft/pending (not live) - pass draft:false / pending:false explicitly to make one live immediately.";
+
   const server = new McpServer(
     { name: "bucket-mcp", version: "0.1.0" },
     {
       instructions:
         "Bitbucket Cloud tools for code review and PR workflows. Diffs can be large - prefer the *_diffstat tools " +
         "before *_diff/*_diff to see what changed without pulling full file contents into context. " +
-        workspaceInstructions,
+        `${workspaceInstructions} ${modeInstructions}`.trim(),
     },
   );
 
   let registeredCount = 0;
   for (const tool of ALL_TOOLS) {
-    if (!isToolAllowed(probe, tool.requiredScope, tool.isWriteOrDestructive, config.readOnly)) {
+    if (tool.onlyInModes && !tool.onlyInModes.includes(config.mode)) {
+      continue;
+    }
+    if (!isToolAllowed(probe, tool.requiredScope, tool.writeLevel, config.mode)) {
       continue;
     }
     server.registerTool(
@@ -76,9 +86,10 @@ export async function createServer(
     probe.kind === "known"
       ? `${probe.scopes.size} granted scope(s) detected`
       : "scope probe inconclusive, failed open";
-  console.error(
-    `bucket-mcp: registered ${registeredCount}/${ALL_TOOLS.length} tools (${probeSummary}${config.readOnly ? ", read-only mode" : ""})`,
-  );
+  console.error(`bucket-mcp: registered ${registeredCount} tools (${probeSummary}, mode=${config.mode})`);
+  if (config.mode === "readwrite") {
+    console.error("bucket-mcp: WARNING - full write access enabled, including merge/decline/delete. Set BITBUCKET_MCP_MODE=draft for a safer default.");
+  }
 
   return server;
 }

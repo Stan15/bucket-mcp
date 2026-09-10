@@ -12,7 +12,7 @@ const branchList = defineTool({
   inputSchema: { ...workspaceRepo, query: z.string().optional().describe("BBQL filter"), maxItems: z.number().int().min(1).max(100).default(25) },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -33,7 +33,7 @@ const branchCreate = defineTool({
   inputSchema: { ...workspaceRepo, name: z.string(), target: z.string().describe("Commit hash or branch name to branch from") },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   requiredScope: "write:repository:bitbucket",
-  isWriteOrDestructive: true,
+  writeLevel: "write",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -53,7 +53,7 @@ const branchDelete = defineTool({
   inputSchema: { ...workspaceRepo, name: z.string() },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
   requiredScope: "write:repository:bitbucket",
-  isWriteOrDestructive: true,
+  writeLevel: "write",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
@@ -68,7 +68,7 @@ const tagList = defineTool({
   inputSchema: { ...workspaceRepo, maxItems: z.number().int().min(1).max(100).default(25) },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;

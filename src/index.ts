@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { loadConfig } from "./config.js";
 import { StaticTokenCredentialProvider } from "./credentials.js";
 import { createServer } from "./server.js";
+import { runConfigureWizard } from "./cli/configure.js";
 
 // Without these, a bug anywhere in the process (not just inside a tool
 // handler, which withErrorHandling already covers) crashes silently with
@@ -20,6 +21,11 @@ process.on("uncaughtException", (error) => {
 });
 
 async function main() {
+  if (process.argv[2] === "configure") {
+    await runConfigureWizard();
+    return;
+  }
+
   const config = loadConfig();
   // v1 credential (personal scoped API token). Swap this line for an OAuth
   // CredentialProvider implementation later - nothing else in the codebase

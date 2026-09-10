@@ -9,7 +9,7 @@ const whoami = defineTool({
   inputSchema: {},
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:user:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (_args, { bitbucket }) => {
     const user = await bitbucket.get("/user", undefined, UserSchema);
     return okResult({ user }, `${user.display_name}${user.uuid ? ` (${user.uuid})` : ""}`);
@@ -30,7 +30,7 @@ const workspaceList = defineTool({
   inputSchema: { maxItems: z.number().int().min(1).max(100).default(25) },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:workspace:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, { bitbucket }) => {
     const { values, hasMore } = await bitbucket.paginate("/user/workspaces", undefined, args.maxItems, WorkspaceAccessSchema);
     const text =
@@ -48,7 +48,7 @@ const workspaceMemberList = defineTool({
   inputSchema: { ...workspaceField, maxItems: z.number().int().min(1).max(100).default(25) },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:workspace:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { values, hasMore } = await context.bitbucket.paginate(
@@ -75,7 +75,7 @@ const pullRequestListByUser = defineTool({
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:pullrequest:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { values, hasMore } = await context.bitbucket.paginate(

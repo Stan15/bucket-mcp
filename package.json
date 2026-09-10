@@ -30,6 +30,7 @@
     "test:contract": "vitest run --config vitest.contract.config.ts"
   },
   "dependencies": {
+    "@clack/prompts": "^1.8.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "zod": "^3.24.1"
   },

@@ -20,7 +20,7 @@ const repositoryList = defineTool({
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { values, hasMore } = await context.bitbucket.paginate(
@@ -40,7 +40,7 @@ const repositoryGet = defineTool({
   inputSchema: { ...workspaceField, repoSlug: z.string() },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
-  isWriteOrDestructive: false,
+  writeLevel: "read",
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const repo = await context.bitbucket.get(`/repositories/${workspace}/${args.repoSlug}`, { fields: REPO_FULL_FIELDS }, RepositorySchema);

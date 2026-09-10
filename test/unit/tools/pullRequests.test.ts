@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { testBitbucketClient } from "../../test/support/testClient.js";
-import { route } from "../../test/support/fakeFetch.js";
-import { pullRequestTools } from "./pullRequests.js";
-import { RequestContext } from "../context.js";
+import { testBitbucketClient } from "../../support/testClient.js";
+import { route } from "../../support/fakeFetch.js";
+import { pullRequestTools } from "../../../src/tools/pullRequests.js";
+import { RequestContext } from "../../../src/context.js";
 
 function tool(name: string) {
   const found = pullRequestTools.find((t) => t.name === name);

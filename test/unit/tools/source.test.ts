@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { testBitbucketClient } from "../../test/support/testClient.js";
-import { route } from "../../test/support/fakeFetch.js";
-import { sourceTools } from "./source.js";
-import { RequestContext } from "../context.js";
+import { testBitbucketClient } from "../../support/testClient.js";
+import { route } from "../../support/fakeFetch.js";
+import { sourceTools } from "../../../src/tools/source.js";
+import { RequestContext } from "../../../src/context.js";
 
 const sourceGet = sourceTools.find((t) => t.name === "bitbucket_source_get")!;
 const args = { workspace: "ws", repoSlug: "repo", revision: "main" };

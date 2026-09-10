@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { testBitbucketClient } from "../test/support/testClient.js";
-import { route } from "../test/support/fakeFetch.js";
-import { isToolAllowed, probeGrantedScopes } from "./scopeProbe.js";
+import { testBitbucketClient } from "../support/testClient.js";
+import { route } from "../support/fakeFetch.js";
+import { isToolAllowed, probeGrantedScopes } from "../../src/scopeProbe.js";
 
 describe("probeGrantedScopes", () => {
   it("parses a comma-separated x-oauth-scopes header into a set", async () => {

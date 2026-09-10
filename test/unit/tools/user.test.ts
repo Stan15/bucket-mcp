@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { testBitbucketClient } from "../../test/support/testClient.js";
-import { route } from "../../test/support/fakeFetch.js";
-import { userTools } from "./user.js";
-import { RequestContext } from "../context.js";
+import { testBitbucketClient } from "../../support/testClient.js";
+import { route } from "../../support/fakeFetch.js";
+import { userTools } from "../../../src/tools/user.js";
+import { RequestContext } from "../../../src/context.js";
 
 function tool(name: string) {
   const found = userTools.find((t) => t.name === name);

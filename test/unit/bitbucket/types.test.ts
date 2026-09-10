@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MergeTaskStatusSchema, PullRequestSchema, TreeEntrySchema, UserSchema } from "./types.js";
+import { MergeTaskStatusSchema, PullRequestSchema, TreeEntrySchema, UserSchema } from "../../../src/bitbucket/types.js";
 
 describe("UserSchema", () => {
   it("parses a nested user summary trimmed to just display_name (no uuid) - the shape `fields=` deliberately produces", () => {

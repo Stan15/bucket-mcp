@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { MissingWorkspaceError, resolveWorkspace } from "./toolHelpers.js";
-import { RequestContext } from "../context.js";
+import { MissingWorkspaceError, resolveWorkspace } from "../../../src/tools/toolHelpers.js";
+import { RequestContext } from "../../../src/context.js";
 
 const bitbucket = {} as RequestContext["bitbucket"];
 

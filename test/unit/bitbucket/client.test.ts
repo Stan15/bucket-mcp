@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { testBitbucketClient } from "../../test/support/testClient.js";
-import { route } from "../../test/support/fakeFetch.js";
-import { BitbucketApiError } from "./client.js";
+import { testBitbucketClient } from "../../support/testClient.js";
+import { route } from "../../support/fakeFetch.js";
+import { BitbucketApiError } from "../../../src/bitbucket/client.js";
 
 describe("BitbucketClient error mapping", () => {
   it("includes both granted and accepted scopes in a 403 message", async () => {

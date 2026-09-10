@@ -10,8 +10,15 @@
  * composition root in index.ts - no tool, client, or gating code changes.
  */
 export interface CredentialProvider {
-  /** Full `Authorization` header value, e.g. "Bearer abc123". */
-  getAuthHeader(): Promise<string>;
+  /**
+   * Full `Authorization` header value, e.g. "Bearer abc123". Returns
+   * undefined for fully unauthenticated requests - Bitbucket serves public
+   * repos to anonymous callers, but rejects a garbage/expired credential
+   * outright rather than falling back to anonymous access, so "no header"
+   * and "a bad header" are genuinely different states or every public-repo
+   * read errors instead of succeeding.
+   */
+  getAuthHeader(): Promise<string | undefined>;
 }
 
 export class StaticTokenCredentialProvider implements CredentialProvider {
@@ -19,5 +26,12 @@ export class StaticTokenCredentialProvider implements CredentialProvider {
 
   async getAuthHeader(): Promise<string> {
     return `Bearer ${this.token}`;
+  }
+}
+
+/** Fully anonymous access - only public repos/endpoints will work. */
+export class NoCredentialProvider implements CredentialProvider {
+  async getAuthHeader(): Promise<undefined> {
+    return undefined;
   }
 }

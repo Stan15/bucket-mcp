@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { Repository, RepositorySchema } from "../bitbucket/types.js";
-import { defineTool, ToolSpec } from "./index.js";
-import { okResult, withErrorHandling } from "./toolHelpers.js";
+import { defineTool, ToolSpec, workspaceField } from "./index.js";
+import { okResult, resolveWorkspace, withErrorHandling } from "./toolHelpers.js";
 
 const REPO_FIELDS = "values.uuid,values.name,values.full_name,values.description,values.is_private,values.mainbranch.name,values.links.html.href,next";
 const REPO_FULL_FIELDS = "uuid,name,full_name,description,is_private,mainbranch.name,links.html.href";
@@ -14,16 +14,17 @@ const repositoryList = defineTool({
   name: "bitbucket_repository_list",
   description: "List repositories in a workspace.",
   inputSchema: {
-    workspace: z.string(),
+    ...workspaceField,
     query: z.string().optional().describe("BBQL filter, e.g. 'name ~ \"api\"'"),
     maxItems: z.number().int().min(1).max(100).default(25),
   },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
-  handler: withErrorHandling(async (args, { bitbucket }) => {
-    const { values, hasMore } = await bitbucket.paginate(
-      `/repositories/${args.workspace}`,
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const { values, hasMore } = await context.bitbucket.paginate(
+      `/repositories/${workspace}`,
       { q: args.query, fields: REPO_FIELDS, pagelen: Math.min(args.maxItems, 50) },
       args.maxItems,
       RepositorySchema,
@@ -36,12 +37,13 @@ const repositoryList = defineTool({
 const repositoryGet = defineTool({
   name: "bitbucket_repository_get",
   description: "Get details of one repository.",
-  inputSchema: { workspace: z.string(), repoSlug: z.string() },
+  inputSchema: { ...workspaceField, repoSlug: z.string() },
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
-  handler: withErrorHandling(async (args, { bitbucket }) => {
-    const repo = await bitbucket.get(`/repositories/${args.workspace}/${args.repoSlug}`, { fields: REPO_FULL_FIELDS }, RepositorySchema);
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const repo = await context.bitbucket.get(`/repositories/${workspace}/${args.repoSlug}`, { fields: REPO_FULL_FIELDS }, RepositorySchema);
     return okResult({ repository: repo }, summarizeRepo(repo));
   }),
 });

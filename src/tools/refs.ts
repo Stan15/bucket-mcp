@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { BranchSchema, TagSchema } from "../bitbucket/types.js";
-import { defineTool, ToolSpec } from "./index.js";
-import { okResult, withErrorHandling } from "./toolHelpers.js";
+import { defineTool, ToolSpec, workspaceField } from "./index.js";
+import { okResult, resolveWorkspace, withErrorHandling } from "./toolHelpers.js";
 
-const workspaceRepo = { workspace: z.string(), repoSlug: z.string() };
+const workspaceRepo = { ...workspaceField, repoSlug: z.string() };
 const REF_LIST_FIELDS = "next,values.name,values.target.hash,values.target.date";
 
 const branchList = defineTool({
@@ -13,9 +13,11 @@ const branchList = defineTool({
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
-  handler: withErrorHandling(async (args, { bitbucket }) => {
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const { bitbucket } = context;
     const { values, hasMore } = await bitbucket.paginate(
-      `/repositories/${args.workspace}/${args.repoSlug}/refs/branches`,
+      `/repositories/${workspace}/${args.repoSlug}/refs/branches`,
       { q: args.query, fields: REF_LIST_FIELDS },
       args.maxItems,
       BranchSchema,
@@ -32,9 +34,11 @@ const branchCreate = defineTool({
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   requiredScope: "write:repository:bitbucket",
   isWriteOrDestructive: true,
-  handler: withErrorHandling(async (args, { bitbucket }) => {
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const { bitbucket } = context;
     const branch = await bitbucket.post(
-      `/repositories/${args.workspace}/${args.repoSlug}/refs/branches`,
+      `/repositories/${workspace}/${args.repoSlug}/refs/branches`,
       { name: args.name, target: { hash: args.target } },
       undefined,
       BranchSchema,
@@ -50,8 +54,10 @@ const branchDelete = defineTool({
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
   requiredScope: "write:repository:bitbucket",
   isWriteOrDestructive: true,
-  handler: withErrorHandling(async (args, { bitbucket }) => {
-    await bitbucket.delete(`/repositories/${args.workspace}/${args.repoSlug}/refs/branches/${encodeURIComponent(args.name)}`);
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const { bitbucket } = context;
+    await bitbucket.delete(`/repositories/${workspace}/${args.repoSlug}/refs/branches/${encodeURIComponent(args.name)}`);
     return okResult({ deleted: true }, `Deleted branch ${args.name}.`);
   }),
 });
@@ -63,9 +69,11 @@ const tagList = defineTool({
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
-  handler: withErrorHandling(async (args, { bitbucket }) => {
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const { bitbucket } = context;
     const { values, hasMore } = await bitbucket.paginate(
-      `/repositories/${args.workspace}/${args.repoSlug}/refs/tags`,
+      `/repositories/${workspace}/${args.repoSlug}/refs/tags`,
       { fields: REF_LIST_FIELDS },
       args.maxItems,
       TagSchema,

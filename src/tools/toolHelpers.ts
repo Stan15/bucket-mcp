@@ -1,5 +1,29 @@
 import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { BitbucketApiError } from "../bitbucket/client.js";
+import { RequestContext } from "../context.js";
+
+/** Thrown by resolveWorkspace when no workspace was given and none is configured - a normal, actionable Tool Execution Error once caught by withErrorHandling, not a bug. */
+export class MissingWorkspaceError extends Error {
+  constructor() {
+    super(
+      "No workspace specified, and no default workspace is configured (BITBUCKET_DEFAULT_WORKSPACE). " +
+        "Call bitbucket_workspace_list to discover available workspaces, then pass `workspace` explicitly.",
+    );
+    this.name = "MissingWorkspaceError";
+  }
+}
+
+/**
+ * Every tool's `workspace` argument is optional and resolves against the
+ * configured default (see config.ts, context.ts) - this is the one place
+ * that resolution happens, so every tool handler gets identical behavior
+ * and an identical error message for free.
+ */
+export function resolveWorkspace(workspace: string | undefined, context: RequestContext): string {
+  const resolved = workspace ?? context.defaultWorkspace;
+  if (!resolved) throw new MissingWorkspaceError();
+  return resolved;
+}
 
 /**
  * Error model decision (see mcp-best-practices.md): every Bitbucket failure

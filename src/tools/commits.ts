@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { Commit, CommitSchema, CommitStatusSchema, DiffStatEntrySchema } from "../bitbucket/types.js";
-import { defineTool, ToolSpec } from "./index.js";
-import { okResult, withErrorHandling } from "./toolHelpers.js";
+import { defineTool, ToolSpec, workspaceField } from "./index.js";
+import { okResult, resolveWorkspace, withErrorHandling } from "./toolHelpers.js";
 
-const workspaceRepo = { workspace: z.string(), repoSlug: z.string() };
+const workspaceRepo = { ...workspaceField, repoSlug: z.string() };
 
 const COMMIT_LIST_FIELDS = "next,values.hash,values.message,values.date,values.author.raw,values.links.html.href";
 const COMMIT_FULL_FIELDS = "hash,message,date,author.raw,links.html.href";
@@ -19,10 +19,12 @@ const commitList = defineTool({
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
-  handler: withErrorHandling(async (args, { bitbucket }) => {
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const { bitbucket } = context;
     const path = args.revision
-      ? `/repositories/${args.workspace}/${args.repoSlug}/commits/${args.revision}`
-      : `/repositories/${args.workspace}/${args.repoSlug}/commits`;
+      ? `/repositories/${workspace}/${args.repoSlug}/commits/${args.revision}`
+      : `/repositories/${workspace}/${args.repoSlug}/commits`;
     const { values, hasMore } = await bitbucket.paginate(path, { fields: COMMIT_LIST_FIELDS }, args.maxItems, CommitSchema);
     const text = values.map(summarizeCommit).join("\n") + (hasMore ? "\n(more results available)" : "");
     return okResult({ commits: values, hasMore }, text || "No commits found.");
@@ -36,8 +38,10 @@ const commitGet = defineTool({
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
-  handler: withErrorHandling(async (args, { bitbucket }) => {
-    const c = await bitbucket.get(`/repositories/${args.workspace}/${args.repoSlug}/commit/${args.commit}`, { fields: COMMIT_FULL_FIELDS }, CommitSchema);
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const { bitbucket } = context;
+    const c = await bitbucket.get(`/repositories/${workspace}/${args.repoSlug}/commit/${args.commit}`, { fields: COMMIT_FULL_FIELDS }, CommitSchema);
     return okResult({ commit: c }, `${summarizeCommit(c)}\n\n${c.message}`);
   }),
 });
@@ -49,9 +53,11 @@ const commitDiffstat = defineTool({
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
-  handler: withErrorHandling(async (args, { bitbucket }) => {
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const { bitbucket } = context;
     const { values } = await bitbucket.paginate(
-      `/repositories/${args.workspace}/${args.repoSlug}/diffstat/${args.spec}`,
+      `/repositories/${workspace}/${args.repoSlug}/diffstat/${args.spec}`,
       undefined,
       200,
       DiffStatEntrySchema,
@@ -68,8 +74,10 @@ const commitDiff = defineTool({
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
-  handler: withErrorHandling(async (args, { bitbucket }) => {
-    const diff = await bitbucket.get<string>(`/repositories/${args.workspace}/${args.repoSlug}/diff/${args.spec}`, { path: args.path });
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const { bitbucket } = context;
+    const diff = await bitbucket.get<string>(`/repositories/${workspace}/${args.repoSlug}/diff/${args.spec}`, { path: args.path });
     return okResult({ diff }, diff);
   }),
 });
@@ -81,9 +89,11 @@ const commitListStatuses = defineTool({
   annotations: { readOnlyHint: true, idempotentHint: true },
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
-  handler: withErrorHandling(async (args, { bitbucket }) => {
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const { bitbucket } = context;
     const { values } = await bitbucket.paginate(
-      `/repositories/${args.workspace}/${args.repoSlug}/commit/${args.commit}/statuses`,
+      `/repositories/${workspace}/${args.repoSlug}/commit/${args.commit}/statuses`,
       undefined,
       50,
       CommitStatusSchema,

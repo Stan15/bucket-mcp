@@ -28,6 +28,9 @@ export interface ToolSpec {
  * parameter type is checked against it), then erases to the uniform
  * ToolSpec shape for storage in a flat array alongside every other tool.
  */
+/** Shared `workspace` field: optional, resolved against the configured default via toolHelpers.ts's resolveWorkspace(). */
+export const workspaceField = { workspace: z.string().optional().describe("Omit to use the configured default workspace") };
+
 export function defineTool<Args extends ZodRawShape>(spec: {
   name: string;
   description: string;

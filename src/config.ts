@@ -8,6 +8,14 @@ export interface Config {
    * Independent of and layered on top of the scope-based gating in scopeProbe.ts.
    */
   readOnly: boolean;
+  /**
+   * Optional default workspace slug. When set, every tool's `workspace`
+   * argument becomes optional and falls back to this value - the AI can
+   * still target a different workspace by passing one explicitly (typically
+   * after calling bitbucket_workspace_list to discover it), it just isn't
+   * required to on every call for the common single-workspace case.
+   */
+  defaultWorkspace?: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -20,6 +28,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
 
   const readOnly = env.BITBUCKET_MCP_READONLY === "1" || env.BITBUCKET_MCP_READONLY === "true";
+  const defaultWorkspace = env.BITBUCKET_DEFAULT_WORKSPACE || undefined;
 
-  return { apiToken, readOnly };
+  return { apiToken, readOnly, defaultWorkspace };
 }

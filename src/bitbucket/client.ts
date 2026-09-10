@@ -34,7 +34,16 @@ type QueryValue = string | number | boolean | undefined;
 const BASE_URL = "https://api.bitbucket.org/2.0";
 
 export class BitbucketClient {
-  constructor(private readonly credentials: CredentialProvider) {}
+  /**
+   * `fetchImpl` defaults to the global fetch but can be overridden - the
+   * seam that makes every tool handler and the server itself testable
+   * without a real network call or a real Bitbucket credential. See
+   * test/support/fakeFetch.ts.
+   */
+  constructor(
+    private readonly credentials: CredentialProvider,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {}
 
   /**
    * `schema`, when passed, runtime-validates the response against a Zod
@@ -71,6 +80,22 @@ export class BitbucketClient {
     query?: Record<string, QueryValue>,
   ): Promise<{ body: T; response: Response }> {
     return this.requestRaw<T>("GET", path, { query });
+  }
+
+  /**
+   * Like `post`, but returns status/headers alongside the body instead of
+   * just the parsed result - needed where a single endpoint's response
+   * shape genuinely depends on the status code (e.g. merge: 200 with the
+   * merged PR vs 202 with only a Location header to poll), so the caller
+   * must branch on `response.status` before deciding how to interpret the
+   * body at all.
+   */
+  async postWithResponse<T = unknown>(
+    path: string,
+    body?: unknown,
+    query?: Record<string, QueryValue>,
+  ): Promise<{ body: T; response: Response }> {
+    return this.requestRaw<T>("POST", path, { body, query });
   }
 
   /**
@@ -124,15 +149,16 @@ export class BitbucketClient {
       }
     }
 
-    const headers: Record<string, string> = {
-      Authorization: await this.credentials.getAuthHeader(),
-      Accept: "application/json",
-    };
+    const headers: Record<string, string> = { Accept: "application/json" };
+    const authHeader = await this.credentials.getAuthHeader();
+    if (authHeader) {
+      headers.Authorization = authHeader;
+    }
     if (options?.body !== undefined) {
       headers["Content-Type"] = "application/json";
     }
 
-    const response = await fetch(url, {
+    const response = await this.fetchImpl(url, {
       method,
       headers,
       body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
@@ -146,12 +172,23 @@ export class BitbucketClient {
       return { body: undefined as T, response };
     }
 
+    // Read the body once and check emptiness before branching on
+    // content-type: a 2xx with no body at all (e.g. merge's 202-accepted
+    // response, which the spec documents as carrying only a Location
+    // header) can arrive with or without a content-type set, so checking
+    // emptiness only inside the JSON branch would miss it.
+    const rawText = await response.text();
+    if (rawText.length === 0) {
+      return { body: undefined as T, response };
+    }
+
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.includes("application/json")) {
-      // diff/patch endpoints return text/plain
-      return { body: (await response.text()) as unknown as T, response };
+      // diff/patch/raw-file-content endpoints return text/plain
+      return { body: rawText as unknown as T, response };
     }
-    const json = await response.json();
+
+    const json = JSON.parse(rawText);
     return { body: options?.schema ? options.schema.parse(json) : (json as T), response };
   }
 

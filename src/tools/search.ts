@@ -1,22 +1,24 @@
 import { z } from "zod";
 import { CodeSearchResultSchema } from "../bitbucket/types.js";
-import { defineTool, ToolSpec } from "./index.js";
-import { okResult, withErrorHandling } from "./toolHelpers.js";
+import { defineTool, ToolSpec, workspaceField } from "./index.js";
+import { okResult, resolveWorkspace, withErrorHandling } from "./toolHelpers.js";
 
 const codeSearch = defineTool({
   name: "bitbucket_code_search",
   description: "Search code across a workspace's repositories.",
   inputSchema: {
-    workspace: z.string(),
+    ...workspaceField,
     searchQuery: z.string().describe("Search terms, e.g. 'function foo repo:my-repo'"),
     maxItems: z.number().int().min(1).max(50).default(10),
   },
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   requiredScope: "read:repository:bitbucket",
   isWriteOrDestructive: false,
-  handler: withErrorHandling(async (args, { bitbucket }) => {
+  handler: withErrorHandling(async (args, context) => {
+    const workspace = resolveWorkspace(args.workspace, context);
+    const { bitbucket } = context;
     const { values, hasMore } = await bitbucket.paginate(
-      `/workspaces/${args.workspace}/search/code`,
+      `/workspaces/${workspace}/search/code`,
       { search_query: args.searchQuery },
       args.maxItems,
       CodeSearchResultSchema,

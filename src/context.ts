@@ -10,4 +10,6 @@ import { BitbucketClient } from "./bitbucket/client.js";
  */
 export interface RequestContext {
   bitbucket: BitbucketClient;
+  /** See Config.defaultWorkspace. Resolve per-call via tools/toolHelpers.ts's resolveWorkspace(). */
+  defaultWorkspace?: string;
 }

@@ -12,6 +12,21 @@ import { z } from "zod";
  * Deliberately narrow - only the fields tools actually request via `fields=`.
  */
 
+export const WorkspaceSchema = z.object({
+  uuid: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  is_private: z.boolean().optional(),
+});
+export type Workspace = z.infer<typeof WorkspaceSchema>;
+
+/** What GET /user/workspaces actually returns per-item: access info wrapping the workspace, not the workspace directly. */
+export const WorkspaceAccessSchema = z.object({
+  administrator: z.boolean().optional(),
+  workspace: WorkspaceSchema,
+});
+export type WorkspaceAccess = z.infer<typeof WorkspaceAccessSchema>;
+
 export const UserSchema = z.object({
   // uuid is optional: nested user summaries (PR author/reviewers/comment
   // author) are deliberately trimmed via `fields=` to just display_name for
@@ -72,6 +87,13 @@ export const PullRequestSchema = z.object({
   title: z.string(),
   description: z.string().optional(),
   state: PullRequestStateSchema,
+  // Cheap, high-signal fields for at-a-glance review status without a
+  // separate call - draft status and comment/task counts are exactly the
+  // kind of thing worth including by default; the full comment/task
+  // objects are not (see comment/task-list tools for those).
+  draft: z.boolean().optional(),
+  comment_count: z.number().optional(),
+  task_count: z.number().optional(),
   author: UserSchema.optional(),
   source: z.object({ branch: z.object({ name: z.string() }) }).optional(),
   destination: z.object({ branch: z.object({ name: z.string() }) }).optional(),
@@ -83,11 +105,38 @@ export const PullRequestSchema = z.object({
 });
 export type PullRequest = z.infer<typeof PullRequestSchema>;
 
+/**
+ * A user's role on one PR - what /approve and /request-changes actually
+ * return (confirmed against the live OpenAPI spec: both return a
+ * `participant` object, not the full pull request). Using the real
+ * response instead of a hardcoded {approved: true} means a review tool
+ * gets Bitbucket's authoritative state back, not just an echo of intent.
+ */
+export const ParticipantSchema = z.object({
+  user: UserSchema.optional(),
+  role: z.enum(["PARTICIPANT", "REVIEWER"]).optional(),
+  approved: z.boolean().optional(),
+  state: z.enum(["approved", "changes_requested"]).nullable().optional(),
+  participated_on: z.string().optional(),
+});
+export type Participant = z.infer<typeof ParticipantSchema>;
+
+/** What POST .../comments/{id}/resolve returns - confirmed via spec: a resolution record, not the comment itself. */
+export const CommentResolutionSchema = z.object({
+  type: z.string(),
+  user: UserSchema.optional(),
+  created_on: z.string().optional(),
+});
+export type CommentResolution = z.infer<typeof CommentResolutionSchema>;
+
 export const CommentSchema = z.object({
   id: z.number(),
   content: z.object({ raw: z.string() }),
   user: UserSchema.optional(),
-  inline: z.object({ path: z.string(), to: z.number().optional(), from: z.number().optional() }).optional(),
+  // Confirmed live against a real Bitbucket PR comment: `from` (and
+  // plausibly `to`) can be explicitly null, not just absent, for a
+  // single-line inline comment - .optional() alone rejected a real response.
+  inline: z.object({ path: z.string(), to: z.number().nullish(), from: z.number().nullish() }).optional(),
   created_on: z.string().optional(),
   deleted: z.boolean().optional(),
 });
@@ -112,3 +161,48 @@ export const CodeSearchResultSchema = z.object({
   ),
 });
 export type CodeSearchResult = z.infer<typeof CodeSearchResultSchema>;
+
+/**
+ * GET .../src/{commit}/{path} returns one of two shapes depending on
+ * whether `path` points to a file or a directory (confirmed via the live
+ * spec's description, not just the formal schema, which under-documents
+ * this endpoint): a directory listing (this schema, paginated) or raw file
+ * bytes/text (handled separately in bitbucket/client.ts's existing
+ * content-type branch - see tools/source.ts).
+ */
+export const TreeEntrySchema = z.object({
+  type: z.enum(["commit_file", "commit_directory"]),
+  path: z.string(),
+  size: z.number().optional(),
+  // Spec formally types this as a single string but the field is
+  // conventionally a list in practice - accept either rather than let an
+  // ambiguous, non-critical field break validation of the whole entry.
+  attributes: z.union([z.array(z.string()), z.string()]).optional(),
+});
+export type TreeEntry = z.infer<typeof TreeEntrySchema>;
+
+/**
+ * GET .../merge/task-status/{task_id} - polled when a merge doesn't
+ * complete synchronously (see tools/pullRequests.ts's merge handler).
+ * merge_result is only present once task_status is SUCCESS.
+ */
+export const MergeTaskStatusSchema = z.object({
+  task_status: z.enum(["PENDING", "SUCCESS", "FAILED"]),
+  merge_result: PullRequestSchema.optional(),
+});
+export type MergeTaskStatus = z.infer<typeof MergeTaskStatusSchema>;
+
+/** GET /workspaces/{workspace}/members - resolves a teammate's uuid from their name, the missing piece for pull_request_create's reviewers field (which requires real uuids, not names). */
+export const WorkspaceMembershipSchema = z.object({
+  user: UserSchema,
+});
+export type WorkspaceMembership = z.infer<typeof WorkspaceMembershipSchema>;
+
+/** A pull request "task" - a checklist item, distinct from a comment. PullRequestSchema.task_count already surfaces the count; this is what's behind that number. */
+export const TaskSchema = z.object({
+  id: z.number(),
+  state: z.enum(["RESOLVED", "UNRESOLVED"]),
+  content: z.object({ raw: z.string() }),
+  creator: UserSchema.optional(),
+});
+export type Task = z.infer<typeof TaskSchema>;

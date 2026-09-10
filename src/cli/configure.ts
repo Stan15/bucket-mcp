@@ -71,13 +71,14 @@ function requireNotCancelled<T>(value: T | symbol): T {
   return value as T;
 }
 
-async function promptForNewToken(scopeLine: string): Promise<string> {
+const SCOPES_GUIDE_URL = "https://github.com/Stan15/bucket-mcp#token-scopes-by-use-case";
+
+async function promptForNewToken(): Promise<string> {
   p.note(
     "1. Bitbucket -> avatar -> Account settings -> Security -> Create and manage API tokens\n" +
       '2. Click "Create API token with scopes" (not the plain "Create API token" button)\n' +
-      `3. Name it, pick Bitbucket, then search and check: ${scopeLine}\n` +
-      "4. Create token - copy it now, you won't see it again\n" +
-      "(other use cases: README.md#token-scopes-by-use-case)",
+      `3. Name it, pick Bitbucket, then select the scopes you want - a guide is here to help you choose: ${SCOPES_GUIDE_URL}\n` +
+      "4. Create token - copy it now, you won't see it again",
     "Create a token",
   );
   return requireNotCancelled(
@@ -147,19 +148,14 @@ export async function runConfigureWizard(): Promise<void> {
     p.log.warn("Full write access includes irreversible actions (merge, decline, delete).");
   }
 
-  const scopeLine =
-    mode === "readonly"
-      ? "read:repository:bitbucket, read:pullrequest:bitbucket, read:user:bitbucket, read:workspace:bitbucket"
-      : "read:repository:bitbucket, write:repository:bitbucket, read:pullrequest:bitbucket, write:pullrequest:bitbucket, read:user:bitbucket, read:workspace:bitbucket";
-
   let token: string;
   if (existing?.BITBUCKET_API_TOKEN) {
     const keepToken = requireNotCancelled(
       await p.confirm({ message: "Keep your existing Bitbucket API token?", initialValue: true }),
     );
-    token = keepToken ? existing.BITBUCKET_API_TOKEN : await promptForNewToken(scopeLine);
+    token = keepToken ? existing.BITBUCKET_API_TOKEN : await promptForNewToken();
   } else {
-    token = await promptForNewToken(scopeLine);
+    token = await promptForNewToken();
   }
 
   const client = new BitbucketClient(new StaticTokenCredentialProvider(token));

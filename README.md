@@ -8,7 +8,7 @@ An MCP server for Bitbucket Cloud — code review and PR workflows (repos, pull 
 npx github:Stan15/bucket-mcp configure
 ```
 
-One guided command: it walks you through creating a Bitbucket API token (telling you exactly which scope boxes to check), validates it live, lets you pick a default workspace from your real list, asks which permission mode you want, and registers everything with Claude Code for you (`claude mcp add --scope user`, so it's available in every project). Restart Claude Code afterward and the tools are available everywhere.
+One guided command: it walks you through creating a Bitbucket API token (pointing you to a [scope guide](#token-scopes-by-use-case) to help you choose), validates it live, lets you pick a default workspace from your real list, asks which permission mode you want, and registers everything with Claude Code for you (`claude mcp add --scope user`, so it's available in every project). Restart Claude Code afterward and the tools are available everywhere.
 
 Prefer to do it by hand, or want to see exactly what gets registered? See [Manual setup](#manual-setup) below.
 

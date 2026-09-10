@@ -6,7 +6,7 @@ import { BitbucketApiError, BitbucketClient } from "../../../src/bitbucket/clien
 import { StaticTokenCredentialProvider } from "../../../src/credentials.js";
 
 describe("BitbucketClient error mapping", () => {
-  it("includes both granted and accepted scopes in a 403 message", async () => {
+  it("reports the missing scope, not the credential's full grant list", async () => {
     const client = testBitbucketClient([
       route("GET", "/2.0/repositories/ws/repo", {
         status: 403,
@@ -17,8 +17,41 @@ describe("BitbucketClient error mapping", () => {
 
     await expect(client.get("/repositories/ws/repo")).rejects.toMatchObject({
       status: 403,
-      message: expect.stringContaining("this credential has scope(s) [read:pullrequest:bitbucket], this operation requires [write:pullrequest:bitbucket]"),
+      message: expect.stringContaining("missing scope(s): [write:pullrequest:bitbucket]"),
     });
+  });
+
+  it("stays concise for a broadly-scoped token instead of dumping every granted scope", async () => {
+    const manyGrantedScopes = [
+      "read:repository:bitbucket",
+      "write:repository:bitbucket",
+      "admin:repository:bitbucket",
+      "read:pullrequest:bitbucket",
+      "read:project:bitbucket",
+      "admin:project:bitbucket",
+      "read:workspace:bitbucket",
+      "admin:workspace:bitbucket",
+      "read:pipeline:bitbucket",
+      "write:pipeline:bitbucket",
+      "admin:pipeline:bitbucket",
+      "read:user:bitbucket",
+      "read:webhook:bitbucket",
+      "write:webhook:bitbucket",
+      "read:snippet:bitbucket",
+      "write:snippet:bitbucket",
+    ].join(", ");
+    const client = testBitbucketClient([
+      route("GET", "/2.0/repositories/ws/repo", {
+        status: 403,
+        headers: { "x-accepted-oauth-scopes": "write:pullrequest:bitbucket", "x-oauth-scopes": manyGrantedScopes },
+        body: { type: "error", error: { message: "forbidden" } },
+      }),
+    ]);
+
+    const error = await client.get("/repositories/ws/repo").catch((e) => e);
+    expect(error.message).toContain("missing scope(s): [write:pullrequest:bitbucket]");
+    expect(error.message).not.toContain("read:repository:bitbucket"); // one of the 16 granted, irrelevant scopes - must not appear
+    expect(error.message.length).toBeLessThan(200);
   });
 
   it("falls back to just the required scope when the granted-scope header is absent", async () => {

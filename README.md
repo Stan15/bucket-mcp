@@ -65,8 +65,10 @@ Restart Claude Code — `npx` re-resolves `bucket-mcp`'s latest published versio
 
 1. Bitbucket → avatar → **Account settings** → **Security** → **Create and manage API tokens**
 2. Click **Create API token with scopes** (not the plain **Create API token** button)
-3. Name it, pick **Bitbucket**, then check the scopes — see [Token scopes by use case](#token-scopes-by-use-case)
-4. Create token — copy it now, you won't see it again
+3. Name it, set expiry to a few months out (not the max), then Next
+4. Pick **Bitbucket**, then Next
+5. Check the scopes — see [Token scopes by use case](#token-scopes-by-use-case)
+6. Create token — copy it now, you won't see it again
 
 ### 2. Set the token without putting it in your shell history
 

@@ -77,8 +77,10 @@ async function promptForNewToken(): Promise<string> {
   p.note(
     "1. Bitbucket -> avatar -> Account settings -> Security -> Create and manage API tokens\n" +
       '2. Click "Create API token with scopes" (not the plain "Create API token" button)\n' +
-      `3. Name it, pick Bitbucket, then select the scopes you want - a guide is here to help you choose: ${SCOPES_GUIDE_URL}\n` +
-      "4. Create token - copy it now, you won't see it again",
+      "3. Name it, set expiry to a few months out (not the max), then Next\n" +
+      "4. Pick Bitbucket, then Next\n" +
+      `5. Select the scopes you want - a guide is here to help you choose: ${SCOPES_GUIDE_URL}\n` +
+      "6. Create token - copy it now, you won't see it again",
     "Create a token",
   );
   return requireNotCancelled(

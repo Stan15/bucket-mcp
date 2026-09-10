@@ -32,6 +32,9 @@ export interface PaginatedResponse<T> {
 type QueryValue = string | number | boolean | undefined;
 
 const BASE_URL = "https://api.bitbucket.org/2.0";
+// Without this, a stalled Bitbucket connection hangs a tool call forever -
+// the caller gets no feedback and no way to know something's wrong.
+const REQUEST_TIMEOUT_MS = 30_000;
 
 export class BitbucketClient {
   /**
@@ -158,11 +161,24 @@ export class BitbucketClient {
       headers["Content-Type"] = "application/json";
     }
 
-    const response = await this.fetchImpl(url, {
-      method,
-      headers,
-      body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(url, {
+        method,
+        headers,
+        body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new BitbucketApiError(`Bitbucket API request timed out after ${REQUEST_TIMEOUT_MS / 1000}s: ${method} ${url.pathname}`, 0);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) {
       throw await this.toApiError(response);

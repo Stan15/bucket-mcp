@@ -2,6 +2,8 @@
   "name": "bitbucket-mcp",
   "version": "0.1.0",
   "description": "MCP server for Bitbucket Cloud - PR/code review workflow",
+  "license": "MIT",
+  "author": "Stanley Ihesiulo",
   "type": "module",
   "bin": {
     "bitbucket-mcp": "./dist/index.js"

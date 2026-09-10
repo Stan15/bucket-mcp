@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { testBitbucketClient } from "../../support/testClient.js";
 import { route } from "../../support/fakeFetch.js";
-import { BitbucketApiError } from "../../../src/bitbucket/client.js";
+import { BitbucketApiError, BitbucketClient } from "../../../src/bitbucket/client.js";
+import { StaticTokenCredentialProvider } from "../../../src/credentials.js";
 
 describe("BitbucketClient error mapping", () => {
   it("includes both granted and accepted scopes in a 403 message", async () => {
@@ -118,5 +119,39 @@ describe("BitbucketClient.paginate", () => {
     const { values, hasMore } = await client.paginate("/repositories/ws/repo/pullrequests", undefined, 2);
     expect(values).toHaveLength(2);
     expect(hasMore).toBe(true);
+  });
+});
+
+describe("BitbucketClient request timeout", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("aborts a hung request and throws a clear, actionable error instead of hanging forever", async () => {
+    vi.useFakeTimers();
+    // A fetch stub that honors AbortSignal, the way the real global fetch does - never
+    // resolves on its own, only rejects once the client's own timeout fires the signal.
+    const hangingFetch = ((_url: URL, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const err = new Error("The operation was aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    }) as typeof fetch;
+
+    const client = new BitbucketClient(new StaticTokenCredentialProvider("test-token"), hangingFetch);
+    const promise = client.get("/repositories/ws/repo");
+    const assertion = expect(promise).rejects.toMatchObject({
+      message: expect.stringContaining("timed out after 30s"),
+    });
+    await vi.advanceTimersByTimeAsync(30_000);
+    await assertion;
+  });
+
+  it("clears its timeout on a normal response - no pending timer left behind to keep the process alive", async () => {
+    vi.useFakeTimers();
+    const client = testBitbucketClient([route("GET", "/2.0/repositories/ws/repo", { status: 200, body: { uuid: "{r}" } })]);
+    await client.get("/repositories/ws/repo");
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

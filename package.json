@@ -1,0 +1,25 @@
+{
+  "name": "bitbucket-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Bitbucket Cloud - PR/code review workflow",
+  "type": "module",
+  "bin": {
+    "bitbucket-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

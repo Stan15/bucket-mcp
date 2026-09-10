@@ -7,10 +7,15 @@ import {
   CommentSchema,
   CommitSchema,
   CommitStatusSchema,
+  DiffStatEntrySchema,
   PullRequestSchema,
   RepositorySchema,
   TagSchema,
+  TaskSchema,
   TreeEntrySchema,
+  UserSchema,
+  WorkspaceAccessSchema,
+  WorkspaceMembershipSchema,
 } from "../../src/bitbucket/types.js";
 
 /**
@@ -18,8 +23,17 @@ import {
  * vitest.config.ts, which excludes this directory from `npm test` - run
  * these explicitly via `npm run test:contract`). Purpose: catch drift
  * between our Zod schemas and what Bitbucket actually returns, using a
- * real, stable, public repository - no credential required, no state
- * mutated (GET-only).
+ * real, stable, public repository - no state mutated, GET-only throughout.
+ *
+ * Two schemas can't be covered here and never will be by this suite:
+ * MergeTaskStatusSchema (what a real merge's 202-async-poll response looks
+ * like) and CommentResolutionSchema (what POST .../comments/{id}/resolve
+ * returns) are both the shape of a write endpoint's response - actually
+ * exercising them means merging a PR or resolving a comment for real,
+ * which this suite's public-repo/no-mutation design can't do without
+ * leaving damage in someone else's repository. Both are covered by mocked
+ * unit tests instead (test/unit/tools/pullRequests.test.ts) - this file's
+ * live-drift guarantee doesn't extend to them.
  */
 
 // A real, public, unauthenticated-readable Bitbucket Cloud repo - confirmed
@@ -29,13 +43,18 @@ const WORKSPACE = "atlassian";
 const REPO = "aui";
 
 /**
- * All reads here work fully unauthenticated (public repo, GET-only) - no
- * token is required to run this suite. BITBUCKET_CONTRACT_TEST_TOKEN is an
- * optional escape hatch purely for a higher rate limit: unauthenticated
- * calls are capped at 60/hour (confirmed live), which this suite alone can
- * burn through in a couple of runs during active development. A token here
- * needs read-only scopes only (read:repository:bitbucket,
- * read:pullrequest:bitbucket) - every test in this file is a GET.
+ * Most reads here work fully unauthenticated (public repo, GET-only) - no
+ * token is required for those. BITBUCKET_CONTRACT_TEST_TOKEN is optional for
+ * them, purely for a higher rate limit: unauthenticated calls are capped at
+ * 60/hour (confirmed live), which this suite alone can burn through in a
+ * couple of runs during active development. A handful of tests below
+ * (anything under an account's own identity: /user, /user/workspaces,
+ * workspace membership) have no unauthenticated equivalent at all - Bitbucket
+ * 401s them regardless - so those are gated on the token being present and
+ * skipped otherwise. A token here needs read-only scopes only
+ * (read:repository:bitbucket, read:pullrequest:bitbucket,
+ * read:user:bitbucket, read:workspace:bitbucket) - every test in this file
+ * is a GET.
  */
 function realClient() {
   const token = process.env.BITBUCKET_CONTRACT_TEST_TOKEN;
@@ -141,4 +160,64 @@ describe("contract: real Bitbucket API responses match our schemas", () => {
     );
     expect(values.length).toBeGreaterThan(0);
   }, 15_000);
+
+  it("GET .../pullrequests/{id} (full, untrimmed fields) matches PullRequestSchema's participants - not just the trimmed list shape", async () => {
+    // The list-endpoint test above requests a narrow `fields=` set that
+    // excludes `participants` entirely, so it never exercises that part of
+    // PullRequestSchema. Fetching one PR in full is the only way to confirm
+    // the embedded participant shape (user/role/approved/state) actually
+    // matches what Bitbucket sends, not just what the standalone
+    // approve/request-changes endpoints return.
+    const pr = await realClient().get(`/repositories/${WORKSPACE}/${REPO}/pullrequests/5452`, undefined, PullRequestSchema);
+    expect(pr.participants?.length).toBeGreaterThan(0);
+    expect(pr.participants?.[0].user?.display_name.length).toBeGreaterThan(0);
+  }, 15_000);
+
+  it("GET .../pullrequests/{id}/tasks matches TaskSchema against a real resolved task", async () => {
+    const { values } = await realClient().paginate(`/repositories/${WORKSPACE}/${REPO}/pullrequests/5452/tasks`, undefined, 5, TaskSchema);
+    expect(values.length).toBeGreaterThan(0);
+    expect(["RESOLVED", "UNRESOLVED"]).toContain(values[0].state);
+  }, 15_000);
+
+  it("GET .../diffstat/{spec} matches DiffStatEntrySchema", async () => {
+    const { values: commits } = await realClient().paginate(`/repositories/${WORKSPACE}/${REPO}/commits`, undefined, 1, CommitSchema);
+    const { values } = await realClient().paginate(
+      `/repositories/${WORKSPACE}/${REPO}/diffstat/${commits[0].hash}`,
+      undefined,
+      5,
+      DiffStatEntrySchema,
+    );
+    expect(values.length).toBeGreaterThan(0);
+  }, 15_000);
+
+  // /user, /user/workspaces, and /workspaces/{workspace}/members all require
+  // an authenticated identity - there's no unauthenticated equivalent to
+  // fall back to (confirmed live: /workspaces/atlassian/members returns 401
+  // with no token). These three run only when BITBUCKET_CONTRACT_TEST_TOKEN
+  // is set; without it they're skipped rather than failed, since a personal
+  // token isn't something a public CI run can assume it has.
+  const hasToken = Boolean(process.env.BITBUCKET_CONTRACT_TEST_TOKEN);
+
+  describe.skipIf(!hasToken)("authenticated-only endpoints (needs BITBUCKET_CONTRACT_TEST_TOKEN)", () => {
+    it("GET /user matches UserSchema", async () => {
+      const user = await realClient().get("/user", undefined, UserSchema);
+      expect(user.display_name.length).toBeGreaterThan(0);
+    }, 15_000);
+
+    it("GET /user/workspaces matches WorkspaceAccessSchema, and GET /workspaces/{slug}/members matches WorkspaceMembershipSchema", async () => {
+      const { values: workspaces } = await realClient().paginate("/user/workspaces", undefined, 1, WorkspaceAccessSchema);
+      expect(workspaces.length).toBeGreaterThan(0);
+
+      // Member listing needs the token's OWN workspace, not the fixed public
+      // "atlassian" one used elsewhere in this file - confirmed live that
+      // it 401s for a workspace the caller doesn't belong to.
+      const { values: members } = await realClient().paginate(
+        `/workspaces/${workspaces[0].workspace.slug}/members`,
+        undefined,
+        5,
+        WorkspaceMembershipSchema,
+      );
+      expect(members.length).toBeGreaterThan(0);
+    }, 15_000);
+  });
 });

@@ -125,3 +125,26 @@ describe("bitbucket_pull_request_task_resolve", () => {
     expect(result.structuredContent).toMatchObject({ task: { state: "RESOLVED" } });
   });
 });
+
+describe("bitbucket_pull_request_comment_resolve", () => {
+  it("returns the resolution record Bitbucket sends back, not the comment itself", async () => {
+    const bitbucket = testBitbucketClient([
+      route("POST", "/2.0/repositories/ws/repo/pullrequests/1/comments/9/resolve", {
+        status: 200,
+        body: { type: "resolution", user: { display_name: "Stan" }, created_on: "2026-09-10T00:00:00Z" },
+      }),
+    ]);
+    const result = await tool("bitbucket_pull_request_comment_resolve").handler({ ...args, commentId: 9 }, { bitbucket } as RequestContext);
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({ resolution: { type: "resolution", user: { display_name: "Stan" } } });
+  });
+});
+
+describe("bitbucket_pull_request_comment_reopen", () => {
+  it("DELETEs the resolution and reports success", async () => {
+    const bitbucket = testBitbucketClient([route("DELETE", "/2.0/repositories/ws/repo/pullrequests/1/comments/9/resolve", { status: 204 })]);
+    const result = await tool("bitbucket_pull_request_comment_reopen").handler({ ...args, commentId: 9 }, { bitbucket } as RequestContext);
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({ reopened: true });
+  });
+});

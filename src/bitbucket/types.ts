@@ -82,6 +82,27 @@ export type CommitStatus = z.infer<typeof CommitStatusSchema>;
 export const PullRequestStateSchema = z.enum(["OPEN", "MERGED", "DECLINED", "SUPERSEDED"]);
 export type PullRequestState = z.infer<typeof PullRequestStateSchema>;
 
+/**
+ * A user's role on one PR - the same shape whether embedded in a pull
+ * request's `participants` array or returned directly by /approve and
+ * /request-changes (confirmed against the live OpenAPI spec: both return a
+ * `participant` object, not the full pull request). `state` is a plain
+ * string rather than an enum of the two known values ("approved",
+ * "changes_requested") - live PR data hasn't surfaced anything else, but
+ * nothing here branches on the literal value, so there's no upside to
+ * rejecting a future or undocumented one.
+ */
+export const ParticipantSchema = z.object({
+  user: UserSchema.optional(),
+  role: z.enum(["PARTICIPANT", "REVIEWER"]).optional(),
+  approved: z.boolean().optional(),
+  state: z.string().nullable().optional(),
+  // Confirmed live: a participant who hasn't acted yet sends this as an
+  // explicit null, not an absent field - .optional() alone rejected it.
+  participated_on: z.string().nullish(),
+});
+export type Participant = z.infer<typeof ParticipantSchema>;
+
 export const PullRequestSchema = z.object({
   id: z.number(),
   title: z.string(),
@@ -98,28 +119,12 @@ export const PullRequestSchema = z.object({
   source: z.object({ branch: z.object({ name: z.string() }) }).optional(),
   destination: z.object({ branch: z.object({ name: z.string() }) }).optional(),
   reviewers: z.array(UserSchema).optional(),
-  participants: z.array(z.object({ user: UserSchema, approved: z.boolean(), state: z.string().nullable() })).optional(),
+  participants: z.array(ParticipantSchema).optional(),
   created_on: z.string().optional(),
   updated_on: z.string().optional(),
   links: z.object({ html: z.object({ href: z.string() }).optional() }).optional(),
 });
 export type PullRequest = z.infer<typeof PullRequestSchema>;
-
-/**
- * A user's role on one PR - what /approve and /request-changes actually
- * return (confirmed against the live OpenAPI spec: both return a
- * `participant` object, not the full pull request). Using the real
- * response instead of a hardcoded {approved: true} means a review tool
- * gets Bitbucket's authoritative state back, not just an echo of intent.
- */
-export const ParticipantSchema = z.object({
-  user: UserSchema.optional(),
-  role: z.enum(["PARTICIPANT", "REVIEWER"]).optional(),
-  approved: z.boolean().optional(),
-  state: z.enum(["approved", "changes_requested"]).nullable().optional(),
-  participated_on: z.string().optional(),
-});
-export type Participant = z.infer<typeof ParticipantSchema>;
 
 /** What POST .../comments/{id}/resolve returns - confirmed via spec: a resolution record, not the comment itself. */
 export const CommentResolutionSchema = z.object({
@@ -208,6 +213,12 @@ export const TaskSchema = z.object({
   id: z.number(),
   state: z.enum(["RESOLVED", "UNRESOLVED"]),
   content: z.object({ raw: z.string() }),
-  creator: UserSchema.optional(),
+  // Confirmed live: at least one real task sent this as an explicit null
+  // rather than omitting it - .optional() alone rejected it.
+  creator: UserSchema.nullish(),
+  // Same private-until-submitted semantics as CommentSchema.pending - a
+  // pending task is invisible to everyone but its author until they submit
+  // their review in Bitbucket.
+  pending: z.boolean().optional(),
 });
 export type Task = z.infer<typeof TaskSchema>;

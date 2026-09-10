@@ -227,6 +227,7 @@ export class BitbucketClient {
       message += grantedScopes
         ? ` (this credential has scope(s) [${grantedScopes}], this operation requires [${acceptedScopes}])`
         : ` (this operation requires scope(s) [${acceptedScopes}])`;
+      message += " - this is an enforced permission boundary, not a transient error. Report it, don't retry with a workaround.";
     }
     if (response.status === 429 && retryAfterSeconds) {
       message += ` (rate limited - retry after ${retryAfterSeconds}s)`;

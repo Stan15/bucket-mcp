@@ -13,9 +13,9 @@ import { createFakeFetch, route } from "../support/fakeFetch.js";
  * registration/gating logic all run for real. Bitbucket itself is the only
  * thing faked (see test/support/fakeFetch.ts).
  */
-async function connectedClient(fetchImpl: typeof fetch, mode: Mode = "readwrite", defaultWorkspace?: string) {
+async function connectedClient(fetchImpl: typeof fetch, mode: Mode = "readwrite", defaultWorkspace?: string, strictScopeFilter = false) {
   const server = await createServer(
-    { apiToken: "test-token", mode, defaultWorkspace },
+    { apiToken: "test-token", mode, defaultWorkspace, strictScopeFilter },
     new StaticTokenCredentialProvider("test-token"),
     fetchImpl,
   );
@@ -33,6 +33,29 @@ describe("bucket-mcp server (e2e)", () => {
     const { tools } = await client.listTools();
     expect(tools.length).toBeGreaterThan(25);
     expect(tools.map((t) => t.name)).toContain("bitbucket_pull_request_merge");
+  });
+
+  it("by default, keeps a tool registered even when the probe says its scope is missing", async () => {
+    const fetchImpl = createFakeFetch([
+      route("GET", "/2.0/user", { status: 200, headers: { "x-oauth-scopes": "read:pullrequest:bitbucket" }, body: {} }),
+    ]);
+    const client = await connectedClient(fetchImpl, "readwrite");
+
+    const { tools } = await client.listTools();
+    // The probe found only read:pullrequest:bitbucket - write:repository:bitbucket
+    // is missing, but strictScopeFilter defaults to false, so this tool stays
+    // listed and a real call would surface Bitbucket's own 403 instead.
+    expect(tools.map((t) => t.name)).toContain("bitbucket_branch_delete");
+  });
+
+  it("strictScopeFilter:true restores hiding a tool whose scope the probe found missing", async () => {
+    const fetchImpl = createFakeFetch([
+      route("GET", "/2.0/user", { status: 200, headers: { "x-oauth-scopes": "read:pullrequest:bitbucket" }, body: {} }),
+    ]);
+    const client = await connectedClient(fetchImpl, "readwrite", undefined, true);
+
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name)).not.toContain("bitbucket_branch_delete");
   });
 
   it("readonly mode excludes every write/draft tool, keeps read tools", async () => {

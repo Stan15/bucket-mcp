@@ -70,15 +70,29 @@ export type ToolWriteLevel = "read" | "draft" | "write";
 /**
  * Should a tool requiring `requiredScope` be registered, given the probe
  * result and the operator's mode ceiling?
+ *
+ * `strictScopeFilter` defaults to off: a tool the mode allows is registered
+ * even if the probe found the credential lacks its scope, because hiding it
+ * instead trades a clear, actionable 403 (now worded as an enforced
+ * boundary - see bitbucket/client.ts's toApiError) for a silent absence from
+ * the tool list that looks like a bug ("why can't it do X?") with no signal
+ * pointing at the real cause. Bitbucket's own per-call 403 is the real
+ * enforcement layer regardless of this filter - see probeGrantedScopes's
+ * doc comment. Set BITBUCKET_MCP_STRICT_SCOPE_FILTER=1 to restore the old
+ * behavior (hide what the probe says is missing) - intentionally
+ * undocumented outside this comment and config.ts: it trades away the
+ * clearer error for a shorter tool list, which isn't the right default.
  */
 export function isToolAllowed(
   probe: ScopeProbeResult,
   requiredScope: string,
   writeLevel: ToolWriteLevel,
   mode: Mode,
+  strictScopeFilter: boolean,
 ): boolean {
   if (mode === "readonly" && writeLevel !== "read") return false;
   if (mode === "draft" && writeLevel === "write") return false;
+  if (!strictScopeFilter) return true;
   if (probe.kind === "unknown") return true; // fail open
   return probe.scopes.has(requiredScope);
 }

@@ -25,11 +25,13 @@ const ALL_TOOLS: ToolSpec[] = [
 
 /**
  * Builds the MCP server with the tool set gated per the decided design:
- * - startup scope probe (option C) filters by what the credential actually
- *   holds, failing open (option A: register everything) if the probe is
- *   inconclusive - see scopeProbe.ts.
- * - the operator's readonly flag (option B) is an independent override
- *   layered on top, applied regardless of what the probe found.
+ * - the operator's mode ceiling (readonly/draft/readwrite) filters which
+ *   tools are registered at all.
+ * - by default, every tool the mode allows is registered regardless of what
+ *   the startup scope probe found the credential actually holds - a missing
+ *   scope surfaces as a clear 403 on the real call instead of a silent gap
+ *   in the tool list. See scopeProbe.ts's isToolAllowed for the (deliberately
+ *   undocumented) flag that restores probe-based filtering.
  */
 export async function createServer(
   config: Config,
@@ -67,7 +69,7 @@ export async function createServer(
     if (tool.onlyInModes && !tool.onlyInModes.includes(config.mode)) {
       continue;
     }
-    if (!isToolAllowed(probe, tool.requiredScope, tool.writeLevel, config.mode)) {
+    if (!isToolAllowed(probe, tool.requiredScope, tool.writeLevel, config.mode, config.strictScopeFilter)) {
       continue;
     }
     server.registerTool(

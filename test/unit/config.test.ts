@@ -46,11 +46,23 @@ describe("loadConfig", () => {
       BITBUCKET_MCP_MODE: "readonly",
       BITBUCKET_DEFAULT_WORKSPACE: "my-team",
     });
-    expect(config).toEqual({ apiToken: "tok", mode: "readonly", defaultWorkspace: "my-team" });
+    expect(config).toEqual({ apiToken: "tok", mode: "readonly", defaultWorkspace: "my-team", strictScopeFilter: false });
   });
 
   it("leaves defaultWorkspace undefined when unset", () => {
     const config = loadConfig({ BITBUCKET_API_TOKEN: "tok" });
     expect(config.defaultWorkspace).toBeUndefined();
+  });
+
+  it("strictScopeFilter defaults to false", () => {
+    expect(loadConfig({ BITBUCKET_API_TOKEN: "tok" }).strictScopeFilter).toBe(false);
+  });
+
+  it("strictScopeFilter turns on via BITBUCKET_MCP_STRICT_SCOPE_FILTER=1", () => {
+    expect(loadConfig({ BITBUCKET_API_TOKEN: "tok", BITBUCKET_MCP_STRICT_SCOPE_FILTER: "1" }).strictScopeFilter).toBe(true);
+  });
+
+  it("strictScopeFilter turns on via BITBUCKET_MCP_STRICT_SCOPE_FILTER=true", () => {
+    expect(loadConfig({ BITBUCKET_API_TOKEN: "tok", BITBUCKET_MCP_STRICT_SCOPE_FILTER: "true" }).strictScopeFilter).toBe(true);
   });
 });

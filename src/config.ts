@@ -14,6 +14,15 @@ export interface Config {
    * required to on every call for the common single-workspace case.
    */
   defaultWorkspace?: string;
+  /**
+   * Undocumented escape hatch (see scopeProbe.ts's isToolAllowed) - hides a
+   * tool the mode allows when the startup scope probe says the credential
+   * lacks it, instead of the default of registering it and letting a real
+   * call surface Bitbucket's own clear 403. Not mentioned in README or the
+   * configure wizard on purpose: it trades a clearer error for a shorter
+   * tool list, which isn't the right default for anyone to reach for.
+   */
+  strictScopeFilter: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -21,14 +30,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (!apiToken) {
     throw new Error(
       "BITBUCKET_API_TOKEN is not set. Create a scoped API token in Bitbucket " +
-        "(Personal settings -> API tokens) and set it as an environment variable.",
+        "(avatar -> Account settings -> Security -> Create and manage API tokens -> " +
+        "Create API token with scopes) and set it as an environment variable.",
     );
   }
 
   const mode = resolveMode(env);
   const defaultWorkspace = env.BITBUCKET_DEFAULT_WORKSPACE || undefined;
+  const strictScopeFilter = env.BITBUCKET_MCP_STRICT_SCOPE_FILTER === "1" || env.BITBUCKET_MCP_STRICT_SCOPE_FILTER === "true";
 
-  return { apiToken, mode, defaultWorkspace };
+  return { apiToken, mode, defaultWorkspace, strictScopeFilter };
 }
 
 export function resolveMode(env: NodeJS.ProcessEnv): Mode {

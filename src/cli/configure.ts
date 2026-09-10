@@ -1,8 +1,24 @@
 import { execFile } from "child_process";
+import { promisify } from "util";
 import * as p from "@clack/prompts";
 import { BitbucketClient } from "../bitbucket/client.js";
 import { StaticTokenCredentialProvider } from "../credentials.js";
 import { UserSchema, WorkspaceAccessSchema } from "../bitbucket/types.js";
+
+const execFileAsync = promisify(execFile);
+
+/** The name this server is always registered under - shared with uninstall.ts. */
+export const SERVER_NAME = "bitbucket";
+
+/** `claude mcp get <name>` exits non-zero when nothing by that name is registered. */
+export async function isServerRegistered(name: string): Promise<boolean> {
+  try {
+    await execFileAsync("claude", ["mcp", "get", name]);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * `npx github:Stan15/bucket-mcp configure` - the entire setup flow in one
@@ -121,16 +137,21 @@ export async function runConfigureWizard(): Promise<void> {
     workspaceSpinner.error("Couldn't fetch workspaces - you can set a default later.");
   }
 
+  const alreadyRegistered = await isServerRegistered(SERVER_NAME);
+
   const claudeArgs = ["mcp", "add", "--scope", "user", "--transport", "stdio"];
   claudeArgs.push("--env", `BITBUCKET_API_TOKEN=${token}`);
   if (defaultWorkspace) claudeArgs.push("--env", `BITBUCKET_DEFAULT_WORKSPACE=${defaultWorkspace}`);
   claudeArgs.push("--env", `BITBUCKET_MCP_MODE=${mode}`);
-  claudeArgs.push("bitbucket", "--", "npx", "-y", "github:Stan15/bucket-mcp");
+  claudeArgs.push(SERVER_NAME, "--", "npx", "-y", "github:Stan15/bucket-mcp");
 
   const redactedArgs = claudeArgs.map((a) => (a.startsWith("BITBUCKET_API_TOKEN=") ? "BITBUCKET_API_TOKEN=***" : a));
-  p.note(`claude ${redactedArgs.join(" ")}`, "About to run");
+  p.note(`claude ${redactedArgs.join(" ")}`, alreadyRegistered ? "About to run (replacing your existing setup)" : "About to run");
 
-  const proceedAnswer = await p.confirm({ message: "Register this with Claude Code now?", initialValue: true });
+  const proceedAnswer = await p.confirm({
+    message: alreadyRegistered ? "Replace your existing Bitbucket setup with this configuration?" : "Register this with Claude Code now?",
+    initialValue: true,
+  });
   if (p.isCancel(proceedAnswer)) {
     p.cancel("Cancelled - nothing was changed.");
     return;
@@ -141,19 +162,18 @@ export async function runConfigureWizard(): Promise<void> {
   }
 
   const registerSpinner = p.spinner();
-  registerSpinner.start("Running claude mcp add");
-  await new Promise<void>((resolve) => {
-    execFile("claude", claudeArgs, (error, _stdout, stderr) => {
-      if (error) {
-        registerSpinner.error("Couldn't run 'claude' automatically");
-        p.log.error(error.message);
-        p.outro("Run the command above yourself instead (with the real token, not the *** version).");
-      } else {
-        registerSpinner.stop("Registered with Claude Code");
-        if (stderr.trim()) p.log.warn(stderr.trim());
-        p.outro(`Restart Claude Code - the Bitbucket tools will be available in every project as ${userDisplayName}.`);
-      }
-      resolve();
-    });
-  });
+  registerSpinner.start(alreadyRegistered ? "Updating existing registration" : "Running claude mcp add");
+  try {
+    // `claude mcp add` errors on a name that's already registered rather than
+    // overwriting it, so a reconfigure has to remove the old one first.
+    if (alreadyRegistered) await execFileAsync("claude", ["mcp", "remove", SERVER_NAME]);
+    const { stderr } = await execFileAsync("claude", claudeArgs);
+    registerSpinner.stop(alreadyRegistered ? "Updated" : "Registered with Claude Code");
+    if (stderr.trim()) p.log.warn(stderr.trim());
+    p.outro(`Restart Claude Code - the Bitbucket tools will be available in every project as ${userDisplayName}.`);
+  } catch (error) {
+    registerSpinner.error("Couldn't run 'claude' automatically");
+    p.log.error(error instanceof Error ? error.message : String(error));
+    p.outro("Run the command above yourself instead (with the real token, not the *** version).");
+  }
 }

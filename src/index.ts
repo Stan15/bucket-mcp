@@ -4,6 +4,7 @@ import { loadConfig } from "./config.js";
 import { StaticTokenCredentialProvider } from "./credentials.js";
 import { createServer } from "./server.js";
 import { runConfigureWizard } from "./cli/configure.js";
+import { runUninstallWizard } from "./cli/uninstall.js";
 
 // Without these, a bug anywhere in the process (not just inside a tool
 // handler, which withErrorHandling already covers) crashes silently with
@@ -23,6 +24,10 @@ process.on("uncaughtException", (error) => {
 async function main() {
   if (process.argv[2] === "configure") {
     await runConfigureWizard();
+    return;
+  }
+  if (process.argv[2] === "uninstall") {
+    await runUninstallWizard();
     return;
   }
 

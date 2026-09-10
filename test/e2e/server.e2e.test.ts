@@ -24,7 +24,7 @@ async function connectedClient(fetchImpl: typeof fetch, readOnly = false, defaul
   return client;
 }
 
-describe("bitbucket-mcp server (e2e)", () => {
+describe("bucket-mcp server (e2e)", () => {
   it("completes the initialize handshake and lists tools", async () => {
     const fetchImpl = createFakeFetch([route("GET", "/2.0/user", { status: 200, body: {} })]);
     const client = await connectedClient(fetchImpl);

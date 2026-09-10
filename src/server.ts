@@ -46,7 +46,7 @@ export async function createServer(
     : "No default workspace is configured, so `workspace` is required on every call - use bitbucket_workspace_list to discover which workspaces are available.";
 
   const server = new McpServer(
-    { name: "bitbucket-mcp", version: "0.1.0" },
+    { name: "bucket-mcp", version: "0.1.0" },
     {
       instructions:
         "Bitbucket Cloud tools for code review and PR workflows. Diffs can be large - prefer the *_diffstat tools " +
@@ -77,7 +77,7 @@ export async function createServer(
       ? `${probe.scopes.size} granted scope(s) detected`
       : "scope probe inconclusive, failed open";
   console.error(
-    `bitbucket-mcp: registered ${registeredCount}/${ALL_TOOLS.length} tools (${probeSummary}${config.readOnly ? ", read-only mode" : ""})`,
+    `bucket-mcp: registered ${registeredCount}/${ALL_TOOLS.length} tools (${probeSummary}${config.readOnly ? ", read-only mode" : ""})`,
   );
 
   return server;

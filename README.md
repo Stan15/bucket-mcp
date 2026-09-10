@@ -1,4 +1,4 @@
-# bitbucket-mcp
+# bucket-mcp
 
 An MCP server for Bitbucket Cloud — code review and PR workflows (repos, pull requests, commits, branches, file browsing, code search, workspace/user discovery) from Claude Code.
 
@@ -31,7 +31,7 @@ The server reads it from the environment it's launched in, so it never needs to 
 ## 4. Add it to Claude Code
 
 ```bash
-claude mcp add --transport stdio bitbucket -- node /absolute/path/to/bitbucket-mcp/dist/index.js
+claude mcp add --transport stdio bitbucket -- node /absolute/path/to/bucket-mcp/dist/index.js
 ```
 
 Use the absolute path to `dist/index.js` from step 1. That's it — restart Claude Code and the tools are available.

@@ -11,11 +11,11 @@ import { createServer } from "./server.js";
 // of these means the process is in an unknown state, so staying alive isn't
 // actually safer than a clean restart.
 process.on("unhandledRejection", (reason) => {
-  console.error("bitbucket-mcp: unhandled rejection:", reason);
+  console.error("bucket-mcp: unhandled rejection:", reason);
   process.exit(1);
 });
 process.on("uncaughtException", (error) => {
-  console.error("bitbucket-mcp: uncaught exception:", error);
+  console.error("bucket-mcp: uncaught exception:", error);
   process.exit(1);
 });
 
@@ -32,6 +32,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error("bitbucket-mcp failed to start:", error);
+  console.error("bucket-mcp failed to start:", error);
   process.exit(1);
 });

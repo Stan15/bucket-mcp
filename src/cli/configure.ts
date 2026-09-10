@@ -73,9 +73,11 @@ function requireNotCancelled<T>(value: T | symbol): T {
 
 async function promptForNewToken(scopeLine: string): Promise<string> {
   p.note(
-    "1. Bitbucket -> your avatar -> Personal settings -> API tokens -> Create token\n" +
-      `${scopeLine}\n` +
-      "3. Copy the token - you won't be able to see it again",
+    "1. Bitbucket -> avatar -> Account settings -> Security -> Create and manage API tokens\n" +
+      '2. Click "Create API token with scopes" (not the plain "Create API token" button)\n' +
+      `3. Name it, pick Bitbucket, then search and check: ${scopeLine}\n` +
+      "4. Create token - copy it now, you won't see it again\n" +
+      "(other use cases: README.md#token-scopes-by-use-case)",
     "Create a token",
   );
   return requireNotCancelled(
@@ -147,8 +149,8 @@ export async function runConfigureWizard(): Promise<void> {
 
   const scopeLine =
     mode === "readonly"
-      ? "2. Check: Repositories (Read), Pull requests (Read), User (Read), Workspaces (Read)"
-      : "2. Check: Repositories (Read + Write), Pull requests (Read + Write), User (Read), Workspaces (Read)";
+      ? "read:repository:bitbucket, read:pullrequest:bitbucket, read:user:bitbucket, read:workspace:bitbucket"
+      : "read:repository:bitbucket, write:repository:bitbucket, read:pullrequest:bitbucket, write:pullrequest:bitbucket, read:user:bitbucket, read:workspace:bitbucket";
 
   let token: string;
   if (existing?.BITBUCKET_API_TOKEN) {

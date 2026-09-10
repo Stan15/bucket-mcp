@@ -34,6 +34,17 @@ Set via `BITBUCKET_MCP_MODE`, or picked during `configure`:
 
 `BITBUCKET_MCP_READONLY=1` still works as an alias for `mode=readonly`, for anyone who set it before `BITBUCKET_MCP_MODE` existed.
 
+## Token scopes by use case
+
+On the "Select Bitbucket scopes" screen, search each name below and check it:
+
+| Use case | Scopes to check |
+| --- | --- |
+| **Read-only** | `read:repository:bitbucket`, `read:pullrequest:bitbucket`, `read:user:bitbucket`, `read:workspace:bitbucket` |
+| **Draft** (default) / **Read-write** | everything above, plus `write:repository:bitbucket`, `write:pullrequest:bitbucket` |
+
+Draft and Read-write need the same token scopes — Bitbucket has no separate scope for "write, but only drafts." The difference between those two modes is enforced by `BITBUCKET_MCP_MODE` itself, not the token: a write-scoped token used in draft mode still can't merge or approve anything, because those tools aren't registered in that mode.
+
 ## Rotating your token
 
 Bitbucket API tokens expire (max 1 year) and can't be edited after creation — only replaced. Re-run `configure` with the new token, or update the `BITBUCKET_API_TOKEN` value directly in Claude Code's MCP config, then restart Claude Code.
@@ -52,10 +63,10 @@ Bitbucket API tokens expire (max 1 year) and can't be edited after creation — 
 
 ### 1. Get a Bitbucket API token
 
-1. Bitbucket → your avatar → **Personal settings** → **API tokens** → **Create token**
-2. Check these boxes: **Repositories** (Read + Write), **Pull requests** (Read + Write), **User** (Read), **Workspaces** (Read)
-   (Only want read-only mode? Check just the Read boxes.)
-3. Copy the token — you won't be able to see it again
+1. Bitbucket → avatar → **Account settings** → **Security** → **Create and manage API tokens**
+2. Click **Create API token with scopes** (not the plain **Create API token** button)
+3. Name it, pick **Bitbucket**, then check the scopes — see [Token scopes by use case](#token-scopes-by-use-case)
+4. Create token — copy it now, you won't see it again
 
 ### 2. Set the token without putting it in your shell history
 

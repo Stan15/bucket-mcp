@@ -5,7 +5,7 @@ An MCP server for Bitbucket Cloud — code review and PR workflows (repos, pull 
 ## Setup
 
 ```bash
-npx github:Stan15/bucket-mcp configure
+npx bucket-mcp configure
 ```
 
 One guided command: it walks you through creating a Bitbucket API token (pointing you to a [scope guide](#token-scopes-by-use-case) to help you choose), validates it live, lets you pick a default workspace from your real list, asks which permission mode you want, and registers everything with Claude Code for you (`claude mcp add --scope user`, so it's available in every project). Restart Claude Code afterward and the tools are available everywhere.
@@ -17,7 +17,7 @@ Run it again any time to change your token, default workspace, or permission mod
 ## Uninstalling
 
 ```bash
-npx github:Stan15/bucket-mcp uninstall
+npx bucket-mcp uninstall
 ```
 
 Removes the Bitbucket MCP server from Claude Code. Equivalent to `claude mcp remove bitbucket` by hand.
@@ -29,7 +29,7 @@ Set via `BITBUCKET_MCP_MODE`, or picked during `configure`:
 | Mode | What it allows |
 | --- | --- |
 | `readonly` | No write or destructive tool of any kind. |
-| `draft` (default) | Can create draft PRs and pending comments/tasks — nothing else that writes. A draft PR is visible to teammates, just marked not-ready-for-review; a pending comment/task is invisible to everyone but its author until they submit their review in Bitbucket's own UI. These two are genuinely different kinds of "not live." Publishing or making something live is always a human action in Bitbucket's UI — this mode can't do it. |
+| `draft` (default) | Can create draft PRs and pending comments/tasks — nothing else that writes. A draft PR is visible to teammates, just marked not-ready-for-review; a pending comment/task is invisible to everyone but its author until they submit their review in Bitbucket's own UI. Either way, a human still has to mark it ready or submit it in Bitbucket before anyone else can act on it — this mode can't do that step. |
 | `readwrite` | Full access, including merge/decline/delete. PRs and comments/tasks you create still default to draft/pending — pass `draft:false` / `pending:false` explicitly to make one live immediately. |
 
 `BITBUCKET_MCP_READONLY=1` still works as an alias for `mode=readonly`, for anyone who set it before `BITBUCKET_MCP_MODE` existed.
@@ -51,7 +51,7 @@ Bitbucket API tokens expire (max 1 year) and can't be edited after creation — 
 
 ## Updating
 
-`npx` re-checks the repo each run, so restarting Claude Code picks up whatever's on `main`. No separate update step.
+Restart Claude Code — `npx` re-resolves `bucket-mcp`'s latest published version each launch. This only picks up an actual release, not every commit to `main`; check [npm](https://www.npmjs.com/package/bucket-mcp) if you're not sure whether the fix you want has shipped yet.
 
 ## Troubleshooting
 
@@ -80,10 +80,10 @@ The server reads it from the environment it's launched in, so it never needs to 
 ### 3. Add it to Claude Code
 
 ```bash
-claude mcp add --scope user --transport stdio bitbucket -- npx -y github:Stan15/bucket-mcp
+claude mcp add --scope user --transport stdio bitbucket -- npx -y bucket-mcp
 ```
 
-`--scope user` registers it globally across every project rather than just the one you happen to be in. `npx` fetches, builds, and runs it, no local clone needed.
+`--scope user` registers it globally across every project rather than just the one you happen to be in. `npx` fetches the published package and runs it, no local clone or build step needed.
 
 ### Optional: a default workspace
 

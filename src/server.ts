@@ -49,7 +49,7 @@ export async function createServer(
 
   const modeInstructions =
     config.mode === "draft"
-      ? "Draft mode: PRs and comments/tasks you create are enforced non-live (a draft PR is visible to teammates but marked not-ready-for-review; a pending comment/task is invisible to everyone but you until the human submits their review in Bitbucket). No tool here can merge, approve, edit an existing PR, or otherwise publish anything - that step is deliberately left to a human, in Bitbucket's own UI."
+      ? "Draft mode: PRs and comments/tasks you create can't reach an actionable state on their own (a draft PR is visible to teammates but marked not-ready-for-review; a pending comment/task is invisible to everyone but you until the human submits their review in Bitbucket). No tool here can merge, approve, edit an existing PR, or otherwise finalize anything - that step is deliberately left to a human, in Bitbucket's own UI."
       : config.mode === "readonly"
         ? "Read-only mode: no write or destructive tool of any kind is available."
         : "Full write access is enabled, including irreversible actions (merge, decline, delete). PRs and comments/tasks you create still default to draft/pending (not live) - pass draft:false / pending:false explicitly to make one live immediately.";

@@ -5,7 +5,7 @@ import { getExistingRegistration, SERVER_NAME } from "./configure.js";
 
 const execFileAsync = promisify(execFile);
 
-/** `npx github:Stan15/bucket-mcp uninstall` - removes the Bitbucket MCP server registration from Claude Code. */
+/** `npx bucket-mcp uninstall` - removes the Bitbucket MCP server registration from Claude Code. */
 export async function runUninstallWizard(): Promise<void> {
   p.intro("Remove Bitbucket from Claude Code");
 

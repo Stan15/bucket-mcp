@@ -47,7 +47,7 @@ export async function getExistingRegistration(name: string): Promise<Record<stri
 }
 
 /**
- * `npx github:Stan15/bucket-mcp configure` - the entire setup flow in one
+ * `npx bucket-mcp configure` - the entire setup flow in one
  * command. Deliberately does NOT invent a config file of our own: Claude
  * Code already persists env vars passed via `claude mcp add --env`, so this
  * just collects what's needed and drives that existing mechanism instead of
@@ -128,7 +128,7 @@ export async function runConfigureWizard(): Promise<void> {
         {
           value: "draft",
           label: "Draft (recommended)",
-          hint: "can create draft PRs and pending comments/tasks - nothing goes live without a human in Bitbucket's UI",
+          hint: "creates drafts/pending items only - a human finalizes them in Bitbucket",
         },
         {
           value: "readonly",
@@ -209,7 +209,7 @@ export async function runConfigureWizard(): Promise<void> {
   claudeArgs.push("--env", `BITBUCKET_API_TOKEN=${token}`);
   if (defaultWorkspace) claudeArgs.push("--env", `BITBUCKET_DEFAULT_WORKSPACE=${defaultWorkspace}`);
   claudeArgs.push("--env", `BITBUCKET_MCP_MODE=${mode}`);
-  claudeArgs.push(SERVER_NAME, "--", "npx", "-y", "github:Stan15/bucket-mcp");
+  claudeArgs.push(SERVER_NAME, "--", "npx", "-y", "bucket-mcp");
 
   const redactedArgs = claudeArgs.map((a) => (a.startsWith("BITBUCKET_API_TOKEN=") ? "BITBUCKET_API_TOKEN=***" : a));
   p.note(`claude ${redactedArgs.join(" ")}`, alreadyRegistered ? "About to run (replacing your existing setup)" : "About to run");

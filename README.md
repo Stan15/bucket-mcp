@@ -8,7 +8,7 @@ An MCP server for Bitbucket Cloud — code review and PR workflows (repos, pull 
 npx bucket-mcp configure
 ```
 
-One guided command: it walks you through creating a Bitbucket API token (pointing you to a [scope guide](#token-scopes-by-use-case) to help you choose), validates it live, lets you pick a default workspace from your real list, asks which permission mode you want, then asks which agent to configure it for. Claude Code and Codex CLI register automatically via their own CLI (`claude mcp add` / `codex mcp add`); Cursor, OpenCode, GitHub Copilot, and Pi Agent get their config file written automatically too, detecting which one you actually use where more than one is possible. Only "my agent isn't listed" falls back to a config block you paste in yourself. Restart your agent afterward and the tools are available.
+One guided command: creates and validates a Bitbucket API token (a [scope guide](#token-scopes-by-use-case) helps you pick what to check), sets a default workspace and permission mode, then registers with whichever agent you choose. Registration is automatic for Claude Code, Codex, Cursor, OpenCode, GitHub Copilot, and Pi Agent — "my agent isn't listed" just prints a config block to paste in yourself. Restart your agent afterward and the tools are available.
 
 Prefer to do it by hand, or want to see exactly what gets registered? See [Manual setup](#manual-setup) below.
 
@@ -20,7 +20,7 @@ Run it again any time to change your token, default workspace, or permission mod
 npx bucket-mcp uninstall
 ```
 
-Removes the Bitbucket MCP server from Claude Code. Equivalent to `claude mcp remove bitbucket` by hand.
+Scans every agent `configure` can register with (plus any "always ask" permission rules it wrote — see below), shows what it found, and removes it after one confirmation. No need to remember which agent you used.
 
 ## Permission modes
 

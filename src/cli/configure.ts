@@ -1,15 +1,14 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import * as p from "@clack/prompts";
-import { BitbucketClient } from "../bitbucket/client.js";
+import { BitbucketApiError, BitbucketClient, missingScopes } from "../bitbucket/client.js";
 import { StaticTokenCredentialProvider } from "../credentials.js";
 import { UserSchema, WorkspaceAccessSchema } from "../bitbucket/types.js";
 import { resolveMode } from "../config.js";
+import { EnvVars, pickAgent, registerClaudeCode, registerCodex, registerCopilot, registerCursor, registerOpenCode, registerPi, showGenericInstructions } from "./agents.js";
+import { SERVER_NAME } from "./constants.js";
 
 const execFileAsync = promisify(execFile);
-
-/** The name this server is always registered under - shared with uninstall.ts. */
-export const SERVER_NAME = "bitbucket";
 
 /**
  * `claude mcp get <name>` has no `--json` output, so this parses its
@@ -47,11 +46,13 @@ export async function getExistingRegistration(name: string): Promise<Record<stri
 }
 
 /**
- * `npx bucket-mcp configure` - the entire setup flow in one
- * command. Deliberately does NOT invent a config file of our own: Claude
- * Code already persists env vars passed via `claude mcp add --env`, so this
- * just collects what's needed and drives that existing mechanism instead of
- * adding a second, redundant place credentials could live.
+ * `npx bucket-mcp configure` - the entire setup flow in one command,
+ * ending with a choice of which MCP-capable agent to register with (see
+ * agents.ts). Deliberately does NOT invent a config file of our own: every
+ * agent this wizard supports already has its own place to persist an MCP
+ * server's env vars (`claude mcp add --env`, a JSON config file, etc.), so
+ * this just collects what's needed and drives that existing mechanism
+ * instead of adding a second, redundant place credentials could live.
  *
  * Uses @clack/prompts rather than hand-rolled readline/raw-mode handling -
  * this is a setup-time-only dependency (never touches the MCP server's
@@ -92,7 +93,7 @@ async function promptForNewToken(): Promise<string> {
 }
 
 export async function runConfigureWizard(): Promise<void> {
-  p.intro("Bitbucket setup for Claude Code");
+  p.intro("Bitbucket MCP server setup");
 
   let existing: Record<string, string> | undefined;
   try {
@@ -183,17 +184,14 @@ export async function runConfigureWizard(): Promise<void> {
     const { values: workspaces } = await client.paginate("/user/workspaces", undefined, 50, WorkspaceAccessSchema);
     workspaceSpinner.stop(`Found ${workspaces.length} workspace(s)`);
 
-    if (workspaces.length === 1) {
-      defaultWorkspace = workspaces[0].workspace.slug;
-      p.log.info(`Using "${defaultWorkspace}" as the default workspace.`);
-    } else if (workspaces.length > 1) {
+    if (workspaces.length > 0) {
       const chosen = requireNotCancelled(
         await p.select({
           message: "Which workspace should be the default?",
           initialValue: workspaces.some((w) => w.workspace.slug === currentWorkspace) ? currentWorkspace : undefined,
           options: [
             ...workspaces.map((w) => ({ value: w.workspace.slug, label: w.workspace.name, hint: w.workspace.slug })),
-            { value: undefined, label: "Skip - I'll specify one per request or set this later" },
+            { value: undefined, label: "No default - I'll specify one per request or set this later" },
           ],
         }),
       );
@@ -201,47 +199,42 @@ export async function runConfigureWizard(): Promise<void> {
     } else {
       p.log.warn("No workspaces found for this token - you can set BITBUCKET_DEFAULT_WORKSPACE later.");
     }
-  } catch {
-    workspaceSpinner.error("Couldn't fetch workspaces - you can set a default later.");
-  }
-
-  const alreadyRegistered = existing !== undefined;
-
-  const claudeArgs = ["mcp", "add", "--scope", "user", "--transport", "stdio"];
-  claudeArgs.push("--env", `BITBUCKET_API_TOKEN=${token}`);
-  if (defaultWorkspace) claudeArgs.push("--env", `BITBUCKET_DEFAULT_WORKSPACE=${defaultWorkspace}`);
-  claudeArgs.push("--env", `BITBUCKET_MCP_MODE=${mode}`);
-  claudeArgs.push(SERVER_NAME, "--", "npx", "-y", "bucket-mcp");
-
-  const redactedArgs = claudeArgs.map((a) => (a.startsWith("BITBUCKET_API_TOKEN=") ? "BITBUCKET_API_TOKEN=***" : a));
-  p.note(`claude ${redactedArgs.join(" ")}`, alreadyRegistered ? "About to run (replacing your existing setup)" : "About to run");
-
-  const proceedAnswer = await p.confirm({
-    message: alreadyRegistered ? "Replace your existing Bitbucket setup with this configuration?" : "Register this with Claude Code now?",
-    initialValue: true,
-  });
-  if (p.isCancel(proceedAnswer)) {
-    p.cancel("Cancelled - nothing was changed.");
-    return;
-  }
-  if (!proceedAnswer) {
-    p.outro("Skipped. Run the command above yourself when ready (with the real token, not the *** version).");
-    return;
-  }
-
-  const registerSpinner = p.spinner();
-  registerSpinner.start(alreadyRegistered ? "Updating existing registration" : "Running claude mcp add");
-  try {
-    // `claude mcp add` errors on a name that's already registered rather than
-    // overwriting it, so a reconfigure has to remove the old one first.
-    if (alreadyRegistered) await execFileAsync("claude", ["mcp", "remove", SERVER_NAME]);
-    const { stderr } = await execFileAsync("claude", claudeArgs);
-    registerSpinner.stop(alreadyRegistered ? "Updated" : "Registered with Claude Code");
-    if (stderr.trim()) p.log.warn(stderr.trim());
-    p.outro(`Restart Claude Code - the Bitbucket tools will be available in every project as ${userDisplayName}.`);
   } catch (error) {
-    registerSpinner.error("Couldn't run 'claude' automatically");
-    p.log.error(error instanceof Error ? error.message : String(error));
-    p.outro("Run the command above yourself instead (with the real token, not the *** version).");
+    if (error instanceof BitbucketApiError && error.status === 403 && error.acceptedScopes) {
+      const missing = missingScopes(error.acceptedScopes, error.grantedScopes);
+      workspaceSpinner.error(`Your token is missing scope(s): ${missing.join(", ")}`);
+      p.log.info("Add that to your token to fetch your workspace list, or continue without a default workspace.");
+    } else {
+      workspaceSpinner.error(`Couldn't fetch workspaces: ${error instanceof Error ? error.message : error}`);
+      p.log.info("You can still continue without a default workspace and set BITBUCKET_DEFAULT_WORKSPACE later.");
+    }
+  }
+
+  const alreadyRegisteredWithClaude = existing !== undefined;
+  const env: EnvVars = { BITBUCKET_API_TOKEN: token, BITBUCKET_DEFAULT_WORKSPACE: defaultWorkspace, BITBUCKET_MCP_MODE: mode };
+
+  const agent = await pickAgent();
+  switch (agent) {
+    case "claude":
+      await registerClaudeCode(env, alreadyRegisteredWithClaude, userDisplayName);
+      break;
+    case "codex":
+      await registerCodex(env);
+      break;
+    case "cursor":
+      await registerCursor(env);
+      break;
+    case "copilot":
+      await registerCopilot(env);
+      break;
+    case "pi":
+      await registerPi(env);
+      break;
+    case "opencode":
+      await registerOpenCode(env);
+      break;
+    case "other":
+      showGenericInstructions(env);
+      break;
   }
 }

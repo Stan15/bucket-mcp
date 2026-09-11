@@ -1,6 +1,6 @@
 # bucket-mcp
 
-An MCP server for Bitbucket Cloud — code review and PR workflows (repos, pull requests, commits, branches, file browsing, code search, workspace/user discovery) from Claude Code.
+An MCP server for Bitbucket Cloud — code review and PR workflows (repos, pull requests, commits, branches, file browsing, code search, workspace/user discovery) for Claude Code, Codex, Cursor, and any other MCP-capable agent.
 
 ## Setup
 
@@ -8,7 +8,7 @@ An MCP server for Bitbucket Cloud — code review and PR workflows (repos, pull 
 npx bucket-mcp configure
 ```
 
-One guided command: it walks you through creating a Bitbucket API token (pointing you to a [scope guide](#token-scopes-by-use-case) to help you choose), validates it live, lets you pick a default workspace from your real list, asks which permission mode you want, and registers everything with Claude Code for you (`claude mcp add --scope user`, so it's available in every project). Restart Claude Code afterward and the tools are available everywhere.
+One guided command: it walks you through creating a Bitbucket API token (pointing you to a [scope guide](#token-scopes-by-use-case) to help you choose), validates it live, lets you pick a default workspace from your real list, asks which permission mode you want, then asks which agent to configure it for. Claude Code and Codex CLI register automatically via their own CLI (`claude mcp add` / `codex mcp add`); Cursor, OpenCode, GitHub Copilot, and Pi Agent get their config file written automatically too, detecting which one you actually use where more than one is possible. Only "my agent isn't listed" falls back to a config block you paste in yourself. Restart your agent afterward and the tools are available.
 
 Prefer to do it by hand, or want to see exactly what gets registered? See [Manual setup](#manual-setup) below.
 
@@ -59,7 +59,9 @@ Restart Claude Code — `npx` re-resolves `bucket-mcp`'s latest published versio
 - **Tools you expect are missing from the list** — check your `BITBUCKET_MCP_MODE`, and check your token's scopes.
 - **"No workspace specified..." error** — either pass `workspace` explicitly, set `BITBUCKET_DEFAULT_WORKSPACE`, or ask the AI to call `bitbucket_workspace_list` first.
 
-## Manual setup
+## Manual setup (Claude Code)
+
+Setting up a different agent by hand? Run `configure`, answer the prompts, and pick "My agent isn't listed" at the end — it prints the same standard MCP config block without registering anything for you.
 
 ### 1. Get a Bitbucket API token
 

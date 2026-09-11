@@ -54,7 +54,7 @@ describe("BitbucketClient error mapping", () => {
     expect(error.message.length).toBeLessThan(200);
   });
 
-  it("falls back to just the required scope when the granted-scope header is absent", async () => {
+  it("reports the required scope as missing when the granted-scope header is absent", async () => {
     const client = testBitbucketClient([
       route("GET", "/2.0/repositories/ws/repo", {
         status: 403,
@@ -64,8 +64,7 @@ describe("BitbucketClient error mapping", () => {
     ]);
 
     const error = await client.get("/repositories/ws/repo").catch((e) => e);
-    expect(error.message).toContain("this operation requires scope(s) [repository]");
-    expect(error.message).not.toContain("this credential has");
+    expect(error.message).toContain("missing scope(s): [repository]");
   });
 
   it("surfaces Retry-After on a 429", async () => {

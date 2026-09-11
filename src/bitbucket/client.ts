@@ -20,6 +20,20 @@ export class BitbucketApiError extends Error {
   }
 }
 
+/**
+ * Diffs a 403's required scopes against what the credential actually holds.
+ * Falls back to the full required list when grantedScopes is unknown (the
+ * header was absent) - there's nothing to diff against, so "required" is
+ * the closest we can get to "missing".
+ */
+export function missingScopes(acceptedScopes: string, grantedScopes?: string): string[] {
+  const required = acceptedScopes.split(",").map((s) => s.trim()).filter(Boolean);
+  if (!grantedScopes) return required;
+  const granted = new Set(grantedScopes.split(",").map((s) => s.trim()).filter(Boolean));
+  const missing = required.filter((s) => !granted.has(s));
+  return missing.length > 0 ? missing : required;
+}
+
 export interface PaginatedResponse<T> {
   size?: number;
   page?: number;
@@ -224,17 +238,8 @@ export class BitbucketClient {
     let message = `Bitbucket API error ${response.status}`;
     if (detail) message += `: ${detail}`;
     if (response.status === 403 && acceptedScopes) {
-      // Report only what's actually missing, not the credential's full grant
-      // list - a broadly-scoped token can hold dozens of scopes, and dumping
-      // all of them buries the one fact that's actually actionable here.
-      if (grantedScopes) {
-        const required = acceptedScopes.split(",").map((s) => s.trim()).filter(Boolean);
-        const granted = new Set(grantedScopes.split(",").map((s) => s.trim()).filter(Boolean));
-        const missing = required.filter((s) => !granted.has(s));
-        message += ` (missing scope(s): [${(missing.length > 0 ? missing : required).join(", ")}])`;
-      } else {
-        message += ` (this operation requires scope(s) [${acceptedScopes}])`;
-      }
+      const missing = missingScopes(acceptedScopes, grantedScopes);
+      message += ` (missing scope(s): [${missing.join(", ")}])`;
       message += " - this is an enforced permission boundary, not a transient error. Report it, don't retry with a workaround.";
     }
     if (response.status === 429 && retryAfterSeconds) {

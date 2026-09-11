@@ -193,7 +193,7 @@ describe("bucket-mcp server (e2e)", () => {
 
     const result = await client.callTool({ name: "bitbucket_repository_get", arguments: { workspace: "ws", repoSlug: "repo" } });
     expect(result.isError).toBe(true);
-    expect((result.content as { text: string }[])[0].text).toContain("requires scope(s) [repository]");
+    expect((result.content as { text: string }[])[0].text).toContain("missing scope(s): [repository]");
   });
 
   it("lists bitbucket_whoami and bitbucket_workspace_list among the registered tools", async () => {

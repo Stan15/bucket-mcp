@@ -1,7 +1,8 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import * as p from "@clack/prompts";
-import { getExistingRegistration, SERVER_NAME } from "./configure.js";
+import { getExistingRegistration } from "./configure.js";
+import { SERVER_NAME } from "./constants.js";
 
 const execFileAsync = promisify(execFile);
 

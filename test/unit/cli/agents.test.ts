@@ -113,6 +113,21 @@ describe("mergeJsonMcpConfig", () => {
     expect(servers(config, "servers").bitbucket).toBeDefined();
     expect(config.mcpServers).toBeUndefined();
   });
+
+  it("omits \"type\" entirely when entryType isn't given (Cursor, Pi)", () => {
+    const { config } = mergeJsonMcpConfig(undefined, "mcpServers", env);
+    expect(servers(config, "mcpServers").bitbucket).not.toHaveProperty("type");
+  });
+
+  it('sets "type": "stdio" for VS Code\'s required discriminator', () => {
+    const { config } = mergeJsonMcpConfig(undefined, "servers", env, "stdio");
+    expect((servers(config, "servers").bitbucket as { type: string }).type).toBe("stdio");
+  });
+
+  it('sets "type": "local" for standalone Copilot CLI\'s required discriminator', () => {
+    const { config } = mergeJsonMcpConfig(undefined, "mcpServers", env, "local");
+    expect((servers(config, "mcpServers").bitbucket as { type: string }).type).toBe("local");
+  });
 });
 
 describe("mergeOpenCodeConfig", () => {

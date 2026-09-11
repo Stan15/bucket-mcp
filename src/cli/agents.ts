@@ -202,12 +202,18 @@ export interface JsonMcpConfig {
  * almost certainly has other tools configured in, so "does this actually
  * preserve everything else" needs to be verified, not eyeballed. `topLevelKey`
  * varies by client (Cursor/Copilot-CLI/Pi use "mcpServers", VS Code's own
- * mcp.json uses "servers").
+ * mcp.json uses "servers"). `entryType`, when given, adds a required "type"
+ * discriminator some clients need and others reject/ignore - confirmed
+ * against each client's own official docs: VS Code requires
+ * `"type": "stdio"`, standalone Copilot CLI requires `"type": "local"`;
+ * Cursor and Pi's adapter need no "type" field at all (command's presence
+ * alone means stdio).
  */
 export function mergeJsonMcpConfig(
   existingRawJson: string | undefined,
   topLevelKey: string,
   env: EnvVars,
+  entryType?: string,
 ): { config: JsonMcpConfig; alreadyRegistered: boolean } {
   let config: JsonMcpConfig = {};
   if (existingRawJson !== undefined) {
@@ -219,7 +225,12 @@ export function mergeJsonMcpConfig(
   }
   const servers = (config[topLevelKey] as Record<string, unknown> | undefined) ?? {};
   const alreadyRegistered = Boolean(servers[SERVER_NAME]);
-  const newEntry = { command: "npx", args: ["-y", "bucket-mcp"], env: Object.fromEntries(envEntries(env)) };
+  const newEntry = {
+    ...(entryType ? { type: entryType } : {}),
+    command: "npx",
+    args: ["-y", "bucket-mcp"],
+    env: Object.fromEntries(envEntries(env)),
+  };
   return { config: { ...config, [topLevelKey]: { ...servers, [SERVER_NAME]: newEntry } }, alreadyRegistered };
 }
 
@@ -341,11 +352,14 @@ export async function registerCopilot(env: EnvVars): Promise<void> {
   const vscodePath = join(vsCodeUserDir(), "mcp.json");
   const [cliExists, vscodeExists] = await Promise.all([fileExists(cliPath), fileExists(vscodePath)]);
 
-  let target: { path: string; key: string; label: string };
+  // type differs by surface - confirmed against each one's own official
+  // docs: standalone Copilot CLI requires "type": "local", VS Code's own
+  // mcp.json requires "type": "stdio". Neither accepts the other's value.
+  let target: { path: string; key: string; label: string; type: string };
   if (cliExists && !vscodeExists) {
-    target = { path: cliPath, key: "mcpServers", label: "Copilot CLI" };
+    target = { path: cliPath, key: "mcpServers", label: "Copilot CLI", type: "local" };
   } else if (vscodeExists && !cliExists) {
-    target = { path: vscodePath, key: "servers", label: "VS Code" };
+    target = { path: vscodePath, key: "servers", label: "VS Code", type: "stdio" };
   } else {
     const choice = await p.select({
       message: cliExists && vscodeExists ? "Found config for both - which one do you want to update?" : "Which Copilot surface do you use?",
@@ -358,10 +372,12 @@ export async function registerCopilot(env: EnvVars): Promise<void> {
       p.cancel("Cancelled - nothing was changed.");
       return;
     }
-    target = choice === "cli" ? { path: cliPath, key: "mcpServers", label: "Copilot CLI" } : { path: vscodePath, key: "servers", label: "VS Code" };
+    target =
+      choice === "cli" ? { path: cliPath, key: "mcpServers", label: "Copilot CLI", type: "local" } : { path: vscodePath, key: "servers", label: "VS Code", type: "stdio" };
   }
 
-  await writeJsonMcpConfig(target.path, (existing) => mergeJsonMcpConfig(existing, target.key, env), genericConfigSnippet(env), target.label);
+  const snippet = JSON.stringify({ type: target.type, command: "npx", args: ["-y", "bucket-mcp"], env: Object.fromEntries(envEntries(env)) }, null, 2);
+  await writeJsonMcpConfig(target.path, (existing) => mergeJsonMcpConfig(existing, target.key, env, target.type), snippet, target.label);
 }
 
 const PI_GLOBAL_CANDIDATES = [join(homedir(), ".config", "mcp", "mcp.json"), join(homedir(), ".agents", "mcp.json"), join(homedir(), ".agents", "mcp", "mcp.json")];

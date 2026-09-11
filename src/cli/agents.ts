@@ -365,6 +365,40 @@ export function mergePiAskRules(config: Record<string, unknown>, writeToolNames:
   return { ...config, mcpServers: { ...mcpServers, [SERVER_NAME]: { ...bitbucketEntry, approveTools: writeToolNames } } };
 }
 
+/**
+ * Removal counterparts, used by uninstall - each returns `found: false`
+ * (config unchanged) when there was nothing to remove, so the caller can
+ * skip writing the file at all rather than rewriting it with no real
+ * change. Pi's approveTools needs no separate removal function: it lives
+ * inside the same per-server entry removeFromJsonMcpConfig already deletes
+ * wholesale.
+ */
+export function removeFromJsonMcpConfig(config: Record<string, unknown>, topLevelKey: string): { config: Record<string, unknown>; found: boolean } {
+  const servers = config[topLevelKey] as Record<string, unknown> | undefined;
+  if (!servers || !(SERVER_NAME in servers)) return { config, found: false };
+  const remainingServers = { ...servers };
+  delete remainingServers[SERVER_NAME];
+  return { config: { ...config, [topLevelKey]: remainingServers }, found: true };
+}
+
+export function removeClaudeAskRules(config: Record<string, unknown>): { config: Record<string, unknown>; found: boolean } {
+  const permissions = config.permissions as { ask?: string[] } | undefined;
+  if (!permissions?.ask) return { config, found: false };
+  const prefix = `mcp__${SERVER_NAME}__`;
+  const filtered = permissions.ask.filter((rule) => !rule.startsWith(prefix));
+  if (filtered.length === permissions.ask.length) return { config, found: false };
+  return { config: { ...config, permissions: { ...permissions, ask: filtered } }, found: true };
+}
+
+/** Matches by the "bitbucket_" tool-name prefix, since OpenCode's permission keys are bare tool names with no server qualifier. */
+export function removeOpenCodeAskRules(config: Record<string, unknown>): { config: Record<string, unknown>; found: boolean } {
+  const permission = config.permission as Record<string, string> | undefined;
+  if (!permission) return { config, found: false };
+  const entries = Object.entries(permission).filter(([key]) => !key.startsWith(`${SERVER_NAME}_`));
+  if (entries.length === Object.keys(permission).length) return { config, found: false };
+  return { config: { ...config, permission: Object.fromEntries(entries) }, found: true };
+}
+
 async function applyClaudeAskRules(writeToolNames: string[]): Promise<void> {
   const settingsPath = join(homedir(), ".claude", "settings.json");
   const existing = await readJsonIfParseable(settingsPath);
@@ -542,4 +576,108 @@ export function showGenericInstructions(env: EnvVars): void {
     "Nothing was changed - this is the standard MCP stdio server shape most clients expect. " +
       "Check your agent's own MCP documentation for where its config file lives and what top-level key wraps this.",
   );
+}
+
+export interface RemovableItem {
+  label: string;
+  remove: () => Promise<void>;
+}
+
+/** Reads and parses a JSON config file for planning a removal - undefined for "missing or unparseable", same as readJsonIfParseable but silent (uninstall shouldn't warn about files it's not going to touch anyway). */
+async function tryReadJson(path: string): Promise<Record<string, unknown> | undefined> {
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf-8");
+  } catch {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+async function planJsonEntryRemoval(configPath: string, topLevelKey: string, label: string): Promise<RemovableItem | undefined> {
+  const existing = await tryReadJson(configPath);
+  if (existing === undefined) return undefined;
+  const { config, found } = removeFromJsonMcpConfig(existing, topLevelKey);
+  if (!found) return undefined;
+  return {
+    label: `${label} (${configPath})`,
+    remove: async () => {
+      await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+    },
+  };
+}
+
+/**
+ * Scans every target `configure` can write to and returns only the ones
+ * that actually have something to remove - uninstall shows this list once,
+ * gets one confirmation, then executes whichever items remain. Claude and
+ * OpenCode each get an additional item for their "ask enforcement" rules
+ * (see offerAskEnforcement) since those live independently of the
+ * registration itself; Pi needs no separate one, since its approveTools
+ * lives inside the same per-server entry the main removal already deletes.
+ */
+export async function planUninstall(): Promise<RemovableItem[]> {
+  const items: RemovableItem[] = [];
+
+  if (await existsViaGet("claude", SERVER_NAME)) {
+    items.push({
+      label: "Claude Code registration (claude mcp remove)",
+      remove: async () => {
+        await execFileAsync("claude", ["mcp", "remove", SERVER_NAME]);
+      },
+    });
+  }
+  const claudeSettingsPath = join(homedir(), ".claude", "settings.json");
+  const claudeSettings = await tryReadJson(claudeSettingsPath);
+  if (claudeSettings !== undefined) {
+    const { config, found } = removeClaudeAskRules(claudeSettings);
+    if (found) {
+      items.push({
+        label: `Claude Code "ask" permission rules (${claudeSettingsPath})`,
+        remove: async () => writeFile(claudeSettingsPath, JSON.stringify(config, null, 2) + "\n", "utf-8"),
+      });
+    }
+  }
+
+  if (await existsViaGet("codex", SERVER_NAME)) {
+    items.push({
+      label: "Codex CLI registration (codex mcp remove)",
+      remove: async () => {
+        await execFileAsync("codex", ["mcp", "remove", SERVER_NAME]);
+      },
+    });
+  }
+
+  const cursorItem = await planJsonEntryRemoval(join(homedir(), ".cursor", "mcp.json"), "mcpServers", "Cursor entry");
+  if (cursorItem) items.push(cursorItem);
+
+  const copilotCliItem = await planJsonEntryRemoval(join(homedir(), ".copilot", "mcp-config.json"), "mcpServers", "Copilot CLI entry");
+  if (copilotCliItem) items.push(copilotCliItem);
+  const copilotVscodeItem = await planJsonEntryRemoval(join(vsCodeUserDir(), "mcp.json"), "servers", "VS Code Copilot entry");
+  if (copilotVscodeItem) items.push(copilotVscodeItem);
+
+  for (const candidate of PI_GLOBAL_CANDIDATES) {
+    const piItem = await planJsonEntryRemoval(candidate, "mcpServers", "Pi entry");
+    if (piItem) items.push(piItem);
+  }
+
+  const openCodePath = join(homedir(), ".config", "opencode", "opencode.json");
+  const openCodeExisting = await tryReadJson(openCodePath);
+  if (openCodeExisting !== undefined) {
+    const { config: afterEntry, found: entryFound } = removeFromJsonMcpConfig(openCodeExisting, "mcp");
+    const { config: afterBoth, found: askFound } = removeOpenCodeAskRules(afterEntry);
+    if (entryFound || askFound) {
+      const parts = [entryFound && "server entry", askFound && '"ask" permission rules'].filter(Boolean);
+      items.push({
+        label: `OpenCode ${parts.join(" and ")} (${openCodePath})`,
+        remove: async () => writeFile(openCodePath, JSON.stringify(afterBoth, null, 2) + "\n", "utf-8"),
+      });
+    }
+  }
+
+  return items;
 }

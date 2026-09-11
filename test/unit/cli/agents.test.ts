@@ -8,6 +8,9 @@ import {
   mergeOpenCodeAskRules,
   mergeOpenCodeConfig,
   mergePiAskRules,
+  removeClaudeAskRules,
+  removeFromJsonMcpConfig,
+  removeOpenCodeAskRules,
 } from "../../../src/cli/agents.js";
 import { EnvVars } from "../../../src/cli/agents.js";
 
@@ -231,5 +234,63 @@ describe("genericConfigSnippet", () => {
       args: ["-y", "bucket-mcp"],
       env: { BITBUCKET_API_TOKEN: "tok123", BITBUCKET_MCP_MODE: "draft" },
     });
+  });
+});
+
+describe("removeFromJsonMcpConfig", () => {
+  it("removes the bitbucket entry and reports found:true", () => {
+    const existing = { mcpServers: { bitbucket: { command: "npx" }, "some-other-tool": { command: "node" } } };
+    const { config, found } = removeFromJsonMcpConfig(existing, "mcpServers");
+    expect(found).toBe(true);
+    expect((config.mcpServers as Record<string, unknown>).bitbucket).toBeUndefined();
+    expect((config.mcpServers as Record<string, unknown>)["some-other-tool"]).toEqual({ command: "node" });
+  });
+
+  it("reports found:false and leaves the config untouched when there's nothing to remove", () => {
+    const existing = { mcpServers: { "some-other-tool": { command: "node" } } };
+    const { config, found } = removeFromJsonMcpConfig(existing, "mcpServers");
+    expect(found).toBe(false);
+    expect(config).toBe(existing);
+  });
+
+  it("reports found:false when the top-level key itself is absent", () => {
+    const { found } = removeFromJsonMcpConfig({}, "mcpServers");
+    expect(found).toBe(false);
+  });
+});
+
+describe("removeClaudeAskRules", () => {
+  it("removes only mcp__bitbucket__* rules, keeping unrelated ask rules", () => {
+    const existing = {
+      permissions: { ask: ["mcp__bitbucket__bitbucket_pull_request_merge", "mcp__other-server__some_tool"], allow: ["Bash(git status)"] },
+    };
+    const { config, found } = removeClaudeAskRules(existing);
+    expect(found).toBe(true);
+    expect((config.permissions as { ask: string[] }).ask).toEqual(["mcp__other-server__some_tool"]);
+    expect((config.permissions as { allow: string[] }).allow).toEqual(["Bash(git status)"]);
+  });
+
+  it("reports found:false when there are no bitbucket ask rules", () => {
+    const existing = { permissions: { ask: ["mcp__other-server__some_tool"] } };
+    const { found } = removeClaudeAskRules(existing);
+    expect(found).toBe(false);
+  });
+
+  it("reports found:false when there's no permissions.ask at all", () => {
+    expect(removeClaudeAskRules({}).found).toBe(false);
+  });
+});
+
+describe("removeOpenCodeAskRules", () => {
+  it("removes only bitbucket_-prefixed tool entries, keeping unrelated permission entries", () => {
+    const existing = { permission: { bash: "allow", bitbucket_pull_request_merge: "ask", bitbucket_branch_delete: "ask" } };
+    const { config, found } = removeOpenCodeAskRules(existing);
+    expect(found).toBe(true);
+    expect(config.permission).toEqual({ bash: "allow" });
+  });
+
+  it("reports found:false when there are no bitbucket_ entries", () => {
+    const existing = { permission: { bash: "allow" } };
+    expect(removeOpenCodeAskRules(existing).found).toBe(false);
   });
 });

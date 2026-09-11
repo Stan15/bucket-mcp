@@ -50,4 +50,40 @@ describe("bitbucket_source_get", () => {
     const result = await sourceGet.handler({ ...args, path: "empty" }, { bitbucket } as RequestContext);
     expect((result.content as { text: string }[])[0].text).toContain("empty or does not exist");
   });
+
+  it("lists the repository root with a trailing slash when path is omitted (Bitbucket 404s .../src/{revision} with no trailing slash)", async () => {
+    const bitbucket = testBitbucketClient([
+      route("GET", "/2.0/repositories/ws/repo/src/main/", { status: 200, body: { values: [{ type: "commit_file", path: "package.json", size: 9811 }] } }),
+    ]);
+    const result = await sourceGet.handler(args, { bitbucket } as RequestContext);
+    expect(result.structuredContent?.entries).toHaveLength(1);
+  });
+
+  it("resolves a slash-containing branch name to its target commit hash before hitting /src/ (Bitbucket's /src/ can't parse a revision-internal slash apart from the path that follows it, confirmed live - but .../refs/branches/{name} can)", async () => {
+    const bitbucket = testBitbucketClient([
+      route("GET", "/2.0/repositories/ws/repo/refs/branches/feature%2Fmy-branch", {
+        status: 200,
+        body: { name: "feature/my-branch", target: { hash: "abc123" } },
+      }),
+      route("GET", "/2.0/repositories/ws/repo/src/abc123/package.json", { status: 200, body: '{"name":"x"}' }),
+    ]);
+    const result = await sourceGet.handler({ ...args, revision: "feature/my-branch", path: "package.json" }, { bitbucket } as RequestContext);
+    expect(result.structuredContent).toMatchObject({ content: '{"name":"x"}' });
+  });
+
+  it("falls back to a tag lookup when the slashed revision isn't a branch", async () => {
+    const bitbucket = testBitbucketClient([
+      route("GET", "/2.0/repositories/ws/repo/refs/branches/release%2F1.0", { status: 404, body: { error: { message: "not found" } } }),
+      route("GET", "/2.0/repositories/ws/repo/refs/tags/release%2F1.0", { status: 200, body: { name: "release/1.0", target: { hash: "def456" } } }),
+      route("GET", "/2.0/repositories/ws/repo/src/def456/package.json", { status: 200, body: '{"name":"x"}' }),
+    ]);
+    const result = await sourceGet.handler({ ...args, revision: "release/1.0", path: "package.json" }, { bitbucket } as RequestContext);
+    expect(result.structuredContent).toMatchObject({ content: '{"name":"x"}' });
+  });
+
+  it("a revision with no slash is used as-is, with no ref-resolution round-trip", async () => {
+    const bitbucket = testBitbucketClient([route("GET", "/2.0/repositories/ws/repo/src/main/package.json", { status: 200, body: '{"name":"x"}' })]);
+    const result = await sourceGet.handler({ ...args, path: "package.json" }, { bitbucket } as RequestContext);
+    expect(result.structuredContent).toMatchObject({ content: '{"name":"x"}' });
+  });
 });

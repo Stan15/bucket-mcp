@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MergeTaskStatusSchema, PullRequestSchema, TreeEntrySchema, UserSchema } from "../../../src/bitbucket/types.js";
+import { DiffStatEntrySchema, MergeTaskStatusSchema, PullRequestSchema, TreeEntrySchema, UserSchema } from "../../../src/bitbucket/types.js";
 
 describe("UserSchema", () => {
   it("parses a nested user summary trimmed to just display_name (no uuid) - the shape `fields=` deliberately produces", () => {
@@ -29,6 +29,16 @@ describe("PullRequestSchema", () => {
   it("parses a minimal PR trimmed via `fields=` down to just the list-view fields", () => {
     const minimal = { id: 1, title: "Fix bug", state: "OPEN" };
     expect(() => PullRequestSchema.parse(minimal)).not.toThrow();
+  });
+});
+
+describe("DiffStatEntrySchema", () => {
+  it("accepts old: null for a newly added file (Bitbucket sends null, not an absent key)", () => {
+    expect(() => DiffStatEntrySchema.parse({ status: "added", old: null, new: { path: "new-file.md" } })).not.toThrow();
+  });
+
+  it("accepts new: null for a removed file", () => {
+    expect(() => DiffStatEntrySchema.parse({ status: "removed", old: { path: "gone.md" }, new: null })).not.toThrow();
   });
 });
 

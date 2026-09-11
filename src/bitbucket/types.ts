@@ -159,8 +159,8 @@ export const DiffStatEntrySchema = z.object({
   status: z.enum(["added", "removed", "modified", "renamed"]),
   lines_added: z.number().optional(),
   lines_removed: z.number().optional(),
-  old: z.object({ path: z.string() }).optional(),
-  new: z.object({ path: z.string() }).optional(),
+  old: z.object({ path: z.string() }).nullable().optional(),
+  new: z.object({ path: z.string() }).nullable().optional(),
 });
 export type DiffStatEntry = z.infer<typeof DiffStatEntrySchema>;
 

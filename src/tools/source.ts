@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { TreeEntry, TreeEntrySchema } from "../bitbucket/types.js";
+import { BitbucketApiError, BitbucketClient } from "../bitbucket/client.js";
+import { BranchSchema, TagSchema, TreeEntry, TreeEntrySchema } from "../bitbucket/types.js";
 import { defineTool, ToolSpec, workspaceField } from "./index.js";
 import { okResult, resolveWorkspace, withErrorHandling } from "./toolHelpers.js";
 
@@ -40,9 +41,10 @@ const sourceGet = defineTool({
   handler: withErrorHandling(async (args, context) => {
     const workspace = resolveWorkspace(args.workspace, context);
     const { bitbucket } = context;
-    const path = args.path ? `/${args.path}` : "";
+    const revision = await resolveSlashedRevision(bitbucket, workspace, args.repoSlug, args.revision);
+    const path = args.path ? `/${args.path}` : "/";
     const body = await bitbucket.get<unknown>(
-      `/repositories/${workspace}/${args.repoSlug}/src/${args.revision}${path}`,
+      `/repositories/${workspace}/${args.repoSlug}/src/${revision}${path}`,
       { format: args.metaOnly ? "meta" : undefined },
     );
 
@@ -70,6 +72,32 @@ const sourceGet = defineTool({
     return okResult({ content, truncated }, content + note);
   }),
 });
+
+/**
+ * The /src/{revision}/{path} endpoint can't tell a slash inside `revision`
+ * (a branch like "feature/foo") apart from the path separator that follows
+ * it - confirmed live against a real slash-containing branch: it 404s with
+ * "Commit not found" whether the slash is raw or percent-encoded, even with
+ * no further path at all. A single-ref lookup (.../refs/branches/{name} or
+ * .../refs/tags/{name}) DOES resolve an encoded slash correctly - matching
+ * refs.ts's branchDelete, which already encodes for the same reason - so for
+ * a slashed revision we resolve it to its target commit hash there first and
+ * use that hash instead. A plain branch/tag/hash with no slash is left
+ * alone, since it's unambiguous and resolving it would just be a wasted
+ * round-trip.
+ */
+async function resolveSlashedRevision(bitbucket: BitbucketClient, workspace: string, repoSlug: string, revision: string): Promise<string> {
+  if (!revision.includes("/")) return revision;
+  for (const [refType, schema] of [["branches", BranchSchema], ["tags", TagSchema]] as const) {
+    try {
+      const ref = await bitbucket.get(`/repositories/${workspace}/${repoSlug}/refs/${refType}/${encodeURIComponent(revision)}`, undefined, schema);
+      if (ref.target?.hash) return ref.target.hash;
+    } catch (e) {
+      if (!(e instanceof BitbucketApiError) || e.status !== 404) throw e;
+    }
+  }
+  return revision; // not a known branch/tag by that exact name - let /src/'s own 404 explain why.
+}
 
 function isTreeEntry(value: unknown): value is TreeEntry {
   return typeof value === "object" && value !== null && "type" in value && ((value as { type: unknown }).type === "commit_file" || (value as { type: unknown }).type === "commit_directory");

@@ -89,10 +89,27 @@ async function existsViaGet(bin: string, name: string): Promise<boolean> {
   }
 }
 
-export async function registerClaudeCode(env: EnvVars, alreadyRegistered: boolean, userDisplayName: string): Promise<void> {
-  const args = ["mcp", "add", "--scope", "user", "--transport", "stdio"];
+/**
+ * SERVER_NAME must come before any --env flag: claude's --env is a
+ * variadic option (`-e, --env <env...>`) that greedily swallows every
+ * bare token after it up to the next recognized flag or `--` - a bare
+ * name placed right before `--` gets absorbed into the last --env's
+ * value list instead of parsed as the positional <name>. Confirmed live:
+ * this exact bug produced "Invalid environment variable format: bitbucket".
+ * A pure function so this ordering has a real test, not just eyeballing -
+ * this exact bug went unnoticed for the entire session because every
+ * `claude mcp add` verification was a hand-typed command with correct
+ * ordering, never the wizard's own generated array run for real.
+ */
+export function buildClaudeMcpAddArgs(env: EnvVars): string[] {
+  const args = ["mcp", "add", SERVER_NAME, "--scope", "user", "--transport", "stdio"];
   for (const [key, value] of envEntries(env)) args.push("--env", `${key}=${value}`);
-  args.push(SERVER_NAME, "--", "npx", "-y", "bucket-mcp");
+  args.push("--", "npx", "-y", "bucket-mcp");
+  return args;
+}
+
+export async function registerClaudeCode(env: EnvVars, alreadyRegistered: boolean, userDisplayName: string): Promise<void> {
+  const args = buildClaudeMcpAddArgs(env);
 
   p.note(`claude ${redact(args).join(" ")}`, alreadyRegistered ? "About to run (replacing your existing setup)" : "About to run");
 
@@ -126,6 +143,14 @@ export async function registerClaudeCode(env: EnvVars, alreadyRegistered: boolea
   }
 }
 
+/** Name comes before --env here too, for the same variadic-swallowing reason as buildClaudeMcpAddArgs. */
+export function buildCodexMcpAddArgs(env: EnvVars): string[] {
+  const args = ["mcp", "add", SERVER_NAME];
+  for (const [key, value] of envEntries(env)) args.push("--env", `${key}=${value}`);
+  args.push("--", "npx", "-y", "bucket-mcp");
+  return args;
+}
+
 /**
  * Codex CLI's `mcp add/get/remove` commands mirror Claude Code's closely
  * enough (per OpenAI's own docs) to reuse the same remove-then-add pattern -
@@ -136,10 +161,7 @@ export async function registerClaudeCode(env: EnvVars, alreadyRegistered: boolea
  */
 export async function registerCodex(env: EnvVars): Promise<void> {
   const alreadyRegistered = await existsViaGet("codex", SERVER_NAME);
-
-  const args = ["mcp", "add", SERVER_NAME];
-  for (const [key, value] of envEntries(env)) args.push("--env", `${key}=${value}`);
-  args.push("--", "npx", "-y", "bucket-mcp");
+  const args = buildCodexMcpAddArgs(env);
 
   p.note(`codex ${redact(args).join(" ")}`, alreadyRegistered ? "About to run (replacing your existing setup)" : "About to run");
 

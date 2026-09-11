@@ -34,7 +34,7 @@ const workspaceList = defineTool({
   handler: withErrorHandling(async (args, { bitbucket }) => {
     const { values, hasMore } = await bitbucket.paginate("/user/workspaces", undefined, args.maxItems, WorkspaceAccessSchema);
     const text =
-      values.map((w) => `${w.workspace.slug} - ${w.workspace.name}${w.administrator ? " (admin)" : ""}`).join("\n") +
+      values.map((w) => `${w.workspace.slug} - ${w.workspace.name ?? w.workspace.slug}${w.administrator ? " (admin)" : ""}`).join("\n") +
       (hasMore ? "\n(more results available)" : "");
     return okResult({ workspaces: values.map((w) => w.workspace) }, text || "No workspaces found.");
   }),

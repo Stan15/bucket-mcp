@@ -30,6 +30,18 @@ describe("bitbucket_workspace_list", () => {
     expect(result.structuredContent).toMatchObject({ workspaces: [{ slug: "my-team" }] });
     expect((result.content as { text: string }[])[0].text).toContain("(admin)");
   });
+
+  it("falls back to slug when a real workspace has no name - confirmed live, not just theoretical", async () => {
+    const bitbucket = testBitbucketClient([
+      route("GET", "/2.0/user/workspaces", {
+        status: 200,
+        body: { values: [{ administrator: false, workspace: { uuid: "{w}", slug: "no-name-workspace" } }] },
+      }),
+    ]);
+    const result = await tool("bitbucket_workspace_list").handler({ maxItems: 25 }, { bitbucket } as RequestContext);
+    expect(result.isError).toBeFalsy();
+    expect((result.content as { text: string }[])[0].text).toContain("no-name-workspace - no-name-workspace");
+  });
 });
 
 describe("bitbucket_workspace_member_list", () => {

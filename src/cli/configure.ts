@@ -87,6 +87,12 @@ async function promptForNewToken(): Promise<string> {
   return requireNotCancelled(
     await p.password({
       message: "Paste your Bitbucket API token",
+      // Bitbucket tokens run ~190+ characters - clack's password prompt has
+      // no width cap, so masking that long always wraps across terminal
+      // lines regardless of mask character. A dot is at least the
+      // conventional, visually lighter password-field look instead of the
+      // default solid block, which reads as heavier/messier at that length.
+      mask: "•",
       validate: (value) => (value ? undefined : "A token is required"),
     }),
   );
@@ -190,7 +196,7 @@ export async function runConfigureWizard(): Promise<void> {
           message: "Which workspace should be the default?",
           initialValue: workspaces.some((w) => w.workspace.slug === currentWorkspace) ? currentWorkspace : undefined,
           options: [
-            ...workspaces.map((w) => ({ value: w.workspace.slug, label: w.workspace.name, hint: w.workspace.slug })),
+            ...workspaces.map((w) => ({ value: w.workspace.slug, label: w.workspace.name ?? w.workspace.slug, hint: w.workspace.slug })),
             { value: undefined, label: "No default - I'll specify one per request or set this later" },
           ],
         }),

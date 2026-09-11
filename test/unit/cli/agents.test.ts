@@ -1,8 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { genericConfigSnippet, mergeJsonMcpConfig, mergeOpenCodeConfig } from "../../../src/cli/agents.js";
+import { buildClaudeMcpAddArgs, buildCodexMcpAddArgs, genericConfigSnippet, mergeJsonMcpConfig, mergeOpenCodeConfig } from "../../../src/cli/agents.js";
 import { EnvVars } from "../../../src/cli/agents.js";
 
 const env: EnvVars = { BITBUCKET_API_TOKEN: "tok123", BITBUCKET_MCP_MODE: "draft" };
+
+describe("buildClaudeMcpAddArgs", () => {
+  it("places the server name before every --env flag, not after", () => {
+    const args = buildClaudeMcpAddArgs(env);
+    const nameIndex = args.indexOf("bitbucket");
+    const firstEnvFlagIndex = args.indexOf("--env");
+    expect(nameIndex).toBeGreaterThanOrEqual(0);
+    expect(nameIndex).toBeLessThan(firstEnvFlagIndex);
+  });
+
+  it("never places a bare (non-KEY=VALUE) token immediately before the -- separator", () => {
+    // claude's --env is variadic (`-e, --env <env...>`) and greedily
+    // consumes every bare token up to the next recognized flag or `--` -
+    // this is the exact shape of the live bug ("Invalid environment
+    // variable format: bitbucket"): a positional sitting right before `--`
+    // gets swallowed into the preceding --env's value list instead.
+    const args = buildClaudeMcpAddArgs(env);
+    const tokenBeforeSeparator = args[args.indexOf("--") - 1];
+    expect(tokenBeforeSeparator).toContain("=");
+  });
+
+  it("includes --scope user and --transport stdio", () => {
+    const args = buildClaudeMcpAddArgs(env);
+    expect(args).toEqual(expect.arrayContaining(["--scope", "user", "--transport", "stdio"]));
+  });
+
+  it("ends with -- npx -y bucket-mcp", () => {
+    const args = buildClaudeMcpAddArgs(env);
+    expect(args.slice(-4)).toEqual(["--", "npx", "-y", "bucket-mcp"]);
+  });
+});
+
+describe("buildCodexMcpAddArgs", () => {
+  it("places the server name before every --env flag, not after", () => {
+    const args = buildCodexMcpAddArgs(env);
+    const nameIndex = args.indexOf("bitbucket");
+    const firstEnvFlagIndex = args.indexOf("--env");
+    expect(nameIndex).toBeGreaterThanOrEqual(0);
+    expect(nameIndex).toBeLessThan(firstEnvFlagIndex);
+  });
+
+  it("ends with -- npx -y bucket-mcp", () => {
+    const args = buildCodexMcpAddArgs(env);
+    expect(args.slice(-4)).toEqual(["--", "npx", "-y", "bucket-mcp"]);
+  });
+});
 
 function servers(config: ReturnType<typeof mergeJsonMcpConfig>["config"], key: string): Record<string, unknown> {
   return config[key] as Record<string, unknown>;

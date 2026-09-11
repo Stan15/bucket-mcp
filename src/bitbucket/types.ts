@@ -14,7 +14,10 @@ import { z } from "zod";
 
 export const WorkspaceSchema = z.object({
   uuid: z.string(),
-  name: z.string(),
+  // Confirmed live: at least one real workspace in a real /user/workspaces
+  // response can be missing name entirely - slug is the fallback display
+  // identifier wherever this is shown to a person.
+  name: z.string().optional(),
   slug: z.string(),
   is_private: z.boolean().optional(),
 });

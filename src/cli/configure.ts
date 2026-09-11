@@ -75,16 +75,22 @@ function requireNotCancelled<T>(value: T | symbol): T {
 const SCOPES_GUIDE_URL = "https://github.com/Stan15/bucket-mcp#token-scopes-by-use-case";
 
 /**
- * OSC 8 terminal hyperlink - the standard escape sequence terminals use to
- * render clickable text with their normal link styling/cursor, rather than
- * a plain URL string or some invented visual marker. Confirmed safe here:
- * @clack/prompts measures box/note width via fast-string-truncated-width,
- * whose ANSI regex has an explicit clause for this exact OSC 8 pattern, so
- * the hyperlink is correctly treated as zero-width and won't throw off the
- * note's border wrapping the way a raw escape sequence otherwise might.
+ * OSC 8 terminal hyperlink wrapped around the URL's own text, not a
+ * shortened word - confirmed live that at least one real terminal
+ * (Herdr) doesn't render OSC 8 at all, silently dropping the escape bytes
+ * and leaving only the visible text behind. Wrapping a short word like
+ * "guide" would turn invisible-and-unclickable in that case; wrapping the
+ * URL itself means an unsupporting terminal still shows (and likely
+ * auto-linkifies via its own bare-URL detection) the same raw URL that
+ * was there before this was ever attempted, while a supporting terminal
+ * additionally gets real hyperlink styling/Ctrl+click on it. Confirmed
+ * safe for box rendering either way: @clack/prompts measures width via
+ * fast-string-truncated-width, whose ANSI regex has an explicit clause
+ * for this exact OSC 8 pattern, so the escape bytes are correctly
+ * zero-width and don't throw off the note's border wrapping.
  */
-function hyperlink(text: string, url: string): string {
-  return `\x1b]8;;${url}\x07${text}\x1b]8;;\x07`;
+function hyperlink(url: string): string {
+  return `\x1b]8;;${url}\x07${url}\x1b]8;;\x07`;
 }
 
 async function promptForNewToken(): Promise<string> {
@@ -93,7 +99,7 @@ async function promptForNewToken(): Promise<string> {
       '2. Click "Create API token with scopes" (not the plain "Create API token" button)\n' +
       "3. Name it, set expiry to a few months out (not the max), then Next\n" +
       "4. Pick Bitbucket, then Next\n" +
-      `5. Select the scopes you want - see this ${hyperlink("guide", SCOPES_GUIDE_URL)} to help you choose\n` +
+      `5. Select the scopes you want - a guide is here to help you choose: ${hyperlink(SCOPES_GUIDE_URL)}\n` +
       "6. Create token - copy it now, you won't see it again",
     "Create a token",
   );

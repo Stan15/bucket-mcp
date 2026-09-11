@@ -4,24 +4,7 @@ import { CredentialProvider } from "./credentials.js";
 import { BitbucketClient } from "./bitbucket/client.js";
 import { probeGrantedScopes, isToolAllowed } from "./scopeProbe.js";
 import { RequestContext } from "./context.js";
-import { ToolSpec } from "./tools/index.js";
-import { repositoryTools } from "./tools/repositories.js";
-import { pullRequestTools } from "./tools/pullRequests.js";
-import { commitTools } from "./tools/commits.js";
-import { refTools } from "./tools/refs.js";
-import { searchTools } from "./tools/search.js";
-import { sourceTools } from "./tools/source.js";
-import { userTools } from "./tools/user.js";
-
-const ALL_TOOLS: ToolSpec[] = [
-  ...repositoryTools,
-  ...pullRequestTools,
-  ...commitTools,
-  ...refTools,
-  ...searchTools,
-  ...sourceTools,
-  ...userTools,
-];
+import { ALL_TOOLS } from "./tools/allTools.js";
 
 /**
  * Builds the MCP server with the tool set gated per the decided design:

@@ -5,6 +5,7 @@ import { homedir } from "os";
 import { dirname, join } from "path";
 import * as p from "@clack/prompts";
 import { Mode } from "../scopeProbe.js";
+import { writeOperationToolNames } from "../tools/allTools.js";
 import { SERVER_NAME } from "./constants.js";
 
 const execFileAsync = promisify(execFile);
@@ -135,6 +136,7 @@ export async function registerClaudeCode(env: EnvVars, alreadyRegistered: boolea
     const { stderr } = await execFileAsync("claude", args);
     spinner.stop(alreadyRegistered ? "Updated" : "Registered with Claude Code");
     if (stderr.trim()) p.log.warn(stderr.trim());
+    await offerAskEnforcement(env.BITBUCKET_MCP_MODE, "Claude Code", applyClaudeAskRules);
     p.outro(`Restart Claude Code - the Bitbucket tools will be available in every project as ${userDisplayName}.`);
   } catch (error) {
     spinner.error("Couldn't run 'claude' automatically");
@@ -244,12 +246,18 @@ export function mergeJsonMcpConfig(
  * shape everything else here uses that forcing it through the same
  * key-only merge would be more confusing than two small merge functions.
  */
+/**
+ * Returns whether the write actually happened - callers that offer a
+ * follow-up step (e.g. enforcing "ask" permission rules) need to know
+ * before deciding whether to ask it, and the caller owns the final outro
+ * either way so a follow-up step can land between "written" and "restart".
+ */
 async function writeJsonMcpConfig(
   configPath: string,
   merge: (existingRawJson: string | undefined) => { config: unknown; alreadyRegistered: boolean },
   displaySnippet: string,
   agentLabel: string,
-): Promise<void> {
+): Promise<boolean> {
   let existingRawJson: string | undefined;
   try {
     existingRawJson = await readFile(configPath, "utf-8");
@@ -275,7 +283,7 @@ async function writeJsonMcpConfig(
   if (p.isCancel(proceed) || !proceed) {
     if (p.isCancel(proceed)) p.cancel("Cancelled - nothing was changed.");
     else p.outro("Skipped - nothing was changed. Run `npx bucket-mcp configure` again when ready, or paste the block above into that file yourself.");
-    return;
+    return false;
   }
 
   const spinner = p.spinner();
@@ -284,12 +292,106 @@ async function writeJsonMcpConfig(
     await mkdir(dirname(configPath), { recursive: true });
     await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
     spinner.stop("Written");
-    p.outro(`Restart ${agentLabel} - the Bitbucket tools will be available.`);
+    return true;
   } catch (error) {
     spinner.error("Couldn't write the config file");
     p.log.error(error instanceof Error ? error.message : String(error));
     p.outro(`Paste the block above into ${configPath} yourself.`);
+    return false;
   }
+}
+
+/**
+ * Offered only for agents whose own docs confirm an explicit "ask" rule
+ * survives that agent's most permissive/auto-approve mode (Claude Code,
+ * OpenCode, Pi) - see the write-up in conversation for Cursor (allowlist
+ * only, "not a security guarantee" per its own docs) and Copilot (binary
+ * allow/deny, no ask tier for the standalone CLI) not qualifying. Skipped
+ * entirely in readonly mode, where there's nothing to protect.
+ */
+async function offerAskEnforcement(mode: Mode, agentLabel: string, apply: (writeToolNames: string[]) => Promise<void>): Promise<void> {
+  const writeTools = writeOperationToolNames(mode);
+  if (writeTools.length === 0) return;
+  const proceed = await p.confirm({
+    message: `Also force ${agentLabel} to always ask permission before running any of this server's ${writeTools.length} write operation(s), even in an auto-approve mode?`,
+    initialValue: true,
+  });
+  if (p.isCancel(proceed) || !proceed) return;
+  await apply(writeTools);
+}
+
+async function readJsonIfParseable(path: string): Promise<Record<string, unknown> | undefined> {
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf-8");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code !== "ENOENT") throw error;
+    return {};
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    p.log.warn(`Couldn't parse ${path} - leaving it untouched.`);
+    return undefined;
+  }
+}
+
+/**
+ * Pure merge steps for the three "ask enforcement" targets, kept separate
+ * from fs I/O for the same reason as mergeJsonMcpConfig/mergeCursorConfig -
+ * these determine whether the actual guarantee holds, so they need real
+ * tests, not eyeballing. Claude tool identifiers compose as
+ * mcp__<server>__<tool-name>; OpenCode's permission config takes bare tool
+ * names; Pi's approveTools is a per-server array alongside its own
+ * command/args/env.
+ */
+export function mergeClaudeAskRules(config: Record<string, unknown>, writeToolNames: string[]): Record<string, unknown> {
+  const permissions = (config.permissions as { ask?: string[] } | undefined) ?? {};
+  const askRules = new Set(permissions.ask ?? []);
+  for (const name of writeToolNames) askRules.add(`mcp__${SERVER_NAME}__${name}`);
+  return { ...config, permissions: { ...permissions, ask: [...askRules] } };
+}
+
+export function mergeOpenCodeAskRules(config: Record<string, unknown>, writeToolNames: string[]): Record<string, unknown> {
+  const permission = (config.permission as Record<string, string> | undefined) ?? {};
+  const merged = { ...permission };
+  for (const name of writeToolNames) merged[name] = "ask";
+  return { ...config, permission: merged };
+}
+
+export function mergePiAskRules(config: Record<string, unknown>, writeToolNames: string[]): Record<string, unknown> {
+  const mcpServers = (config.mcpServers as Record<string, unknown> | undefined) ?? {};
+  const bitbucketEntry = (mcpServers[SERVER_NAME] as Record<string, unknown> | undefined) ?? {};
+  return { ...config, mcpServers: { ...mcpServers, [SERVER_NAME]: { ...bitbucketEntry, approveTools: writeToolNames } } };
+}
+
+async function applyClaudeAskRules(writeToolNames: string[]): Promise<void> {
+  const settingsPath = join(homedir(), ".claude", "settings.json");
+  const existing = await readJsonIfParseable(settingsPath);
+  if (existing === undefined) return;
+  const config = mergeClaudeAskRules(existing, writeToolNames);
+  await mkdir(dirname(settingsPath), { recursive: true });
+  await writeFile(settingsPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+  p.log.success(`Added ${writeToolNames.length} "ask" rule(s) to ${settingsPath}.`);
+}
+
+async function applyOpenCodeAskRules(writeToolNames: string[]): Promise<void> {
+  const configPath = join(homedir(), ".config", "opencode", "opencode.json");
+  const existing = await readJsonIfParseable(configPath);
+  if (existing === undefined) return;
+  const config = mergeOpenCodeAskRules(existing, writeToolNames);
+  await mkdir(dirname(configPath), { recursive: true });
+  await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+  p.log.success(`Set ${writeToolNames.length} tool(s) to "ask" in ${configPath}'s permission config.`);
+}
+
+async function applyPiAskRules(configPath: string, writeToolNames: string[]): Promise<void> {
+  const existing = await readJsonIfParseable(configPath);
+  if (existing === undefined) return;
+  const config = mergePiAskRules(existing, writeToolNames);
+  await mkdir(dirname(configPath), { recursive: true });
+  await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+  p.log.success(`Set approveTools for ${writeToolNames.length} tool(s) in ${configPath}.`);
 }
 
 /**
@@ -298,12 +400,13 @@ async function writeJsonMcpConfig(
  * read-merge-write is the "guaranteed" equivalent of `claude mcp add` here.
  */
 export async function registerCursor(env: EnvVars): Promise<void> {
-  await writeJsonMcpConfig(
+  const written = await writeJsonMcpConfig(
     join(homedir(), ".cursor", "mcp.json"),
     (existing) => mergeJsonMcpConfig(existing, "mcpServers", env),
     genericConfigSnippet(env),
     "Cursor",
   );
+  if (written) p.outro("Restart Cursor - the Bitbucket tools will be available in every project.");
 }
 
 /**
@@ -336,7 +439,10 @@ export async function registerOpenCode(env: EnvVars): Promise<void> {
     null,
     2,
   );
-  await writeJsonMcpConfig(configPath, (existing) => mergeOpenCodeConfig(existing, env), snippet, "OpenCode");
+  const written = await writeJsonMcpConfig(configPath, (existing) => mergeOpenCodeConfig(existing, env), snippet, "OpenCode");
+  if (!written) return;
+  await offerAskEnforcement(env.BITBUCKET_MCP_MODE, "OpenCode", applyOpenCodeAskRules);
+  p.outro("Restart OpenCode - the Bitbucket tools will be available.");
 }
 
 /**
@@ -377,7 +483,8 @@ export async function registerCopilot(env: EnvVars): Promise<void> {
   }
 
   const snippet = JSON.stringify({ type: target.type, command: "npx", args: ["-y", "bucket-mcp"], env: Object.fromEntries(envEntries(env)) }, null, 2);
-  await writeJsonMcpConfig(target.path, (existing) => mergeJsonMcpConfig(existing, target.key, env, target.type), snippet, target.label);
+  const written = await writeJsonMcpConfig(target.path, (existing) => mergeJsonMcpConfig(existing, target.key, env, target.type), snippet, target.label);
+  if (written) p.outro(`Restart ${target.label} - the Bitbucket tools will be available.`);
 }
 
 const PI_GLOBAL_CANDIDATES = [join(homedir(), ".config", "mcp", "mcp.json"), join(homedir(), ".agents", "mcp.json"), join(homedir(), ".agents", "mcp", "mcp.json")];
@@ -408,15 +515,14 @@ export async function registerPi(env: EnvVars): Promise<void> {
   if (existing.length === 0) {
     p.log.info(`No existing MCP config found - creating the standard shared location: ${PI_GLOBAL_CANDIDATES[0]}`);
   }
-  await writeJsonMcpConfig(
-    existing[0] ?? PI_GLOBAL_CANDIDATES[0],
-    (raw) => mergeJsonMcpConfig(raw, "mcpServers", env),
-    genericConfigSnippet(env),
-    "Pi",
-  );
+  const configPath = existing[0] ?? PI_GLOBAL_CANDIDATES[0];
+  const written = await writeJsonMcpConfig(configPath, (raw) => mergeJsonMcpConfig(raw, "mcpServers", env), genericConfigSnippet(env), "Pi");
+  if (!written) return;
   if (existing.length === 0) {
     p.log.info("If Pi doesn't pick this up, check its docs - it also reads project-local .mcp.json/.pi/mcp.json and a Pi-install-specific path this wizard doesn't know.");
   }
+  await offerAskEnforcement(env.BITBUCKET_MCP_MODE, "Pi", (writeToolNames) => applyPiAskRules(configPath, writeToolNames));
+  p.outro("Restart Pi - the Bitbucket tools will be available.");
 }
 
 /** Manual fallback for Pi - used when multiple existing global configs make automated writing unsafe. */

@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildClaudeMcpAddArgs, buildCodexMcpAddArgs, genericConfigSnippet, mergeJsonMcpConfig, mergeOpenCodeConfig } from "../../../src/cli/agents.js";
+import {
+  buildClaudeMcpAddArgs,
+  buildCodexMcpAddArgs,
+  genericConfigSnippet,
+  mergeClaudeAskRules,
+  mergeJsonMcpConfig,
+  mergeOpenCodeAskRules,
+  mergeOpenCodeConfig,
+  mergePiAskRules,
+} from "../../../src/cli/agents.js";
 import { EnvVars } from "../../../src/cli/agents.js";
 
 const env: EnvVars = { BITBUCKET_API_TOKEN: "tok123", BITBUCKET_MCP_MODE: "draft" };
@@ -160,6 +169,57 @@ describe("mergeOpenCodeConfig", () => {
     const existing = JSON.stringify({ mcp: { bitbucket: { type: "local", command: ["npx", "-y", "bucket-mcp"] } } });
     const { alreadyRegistered } = mergeOpenCodeConfig(existing, env);
     expect(alreadyRegistered).toBe(true);
+  });
+});
+
+const writeTools = ["bitbucket_pull_request_merge", "bitbucket_branch_delete"];
+
+describe("mergeClaudeAskRules", () => {
+  it("adds mcp__bitbucket__<tool> ask rules for each write tool", () => {
+    const config = mergeClaudeAskRules({}, writeTools);
+    expect(config.permissions).toEqual({ ask: ["mcp__bitbucket__bitbucket_pull_request_merge", "mcp__bitbucket__bitbucket_branch_delete"] });
+  });
+
+  it("preserves existing permissions and other top-level settings, and dedupes", () => {
+    const existing = {
+      someOtherSetting: true,
+      permissions: { ask: ["mcp__bitbucket__bitbucket_pull_request_merge", "mcp__other-server__some_tool"], allow: ["Bash(git status)"] },
+    };
+    const config = mergeClaudeAskRules(existing, writeTools);
+    expect(config.someOtherSetting).toBe(true);
+    expect((config.permissions as { allow: string[] }).allow).toEqual(["Bash(git status)"]);
+    const ask = (config.permissions as { ask: string[] }).ask;
+    expect(ask).toContain("mcp__other-server__some_tool");
+    expect(ask.filter((r) => r === "mcp__bitbucket__bitbucket_pull_request_merge")).toHaveLength(1);
+  });
+});
+
+describe("mergeOpenCodeAskRules", () => {
+  it("sets each write tool to \"ask\" by bare tool name, no server prefix", () => {
+    const config = mergeOpenCodeAskRules({}, writeTools);
+    expect(config.permission).toEqual({ bitbucket_pull_request_merge: "ask", bitbucket_branch_delete: "ask" });
+  });
+
+  it("preserves existing permission entries for other tools", () => {
+    const existing = { permission: { bash: "allow", edit: "ask" } };
+    const config = mergeOpenCodeAskRules(existing, writeTools);
+    expect(config.permission).toEqual({ bash: "allow", edit: "ask", bitbucket_pull_request_merge: "ask", bitbucket_branch_delete: "ask" });
+  });
+});
+
+describe("mergePiAskRules", () => {
+  it("sets approveTools on the bitbucket server entry, preserving its other fields", () => {
+    const existing = { mcpServers: { bitbucket: { command: "npx", args: ["-y", "bucket-mcp"], env: { X: "1" } } } };
+    const config = mergePiAskRules(existing, writeTools);
+    const bitbucketEntry = (config.mcpServers as Record<string, unknown>).bitbucket as Record<string, unknown>;
+    expect(bitbucketEntry.approveTools).toEqual(writeTools);
+    expect(bitbucketEntry.command).toBe("npx");
+  });
+
+  it("preserves other servers in mcpServers", () => {
+    const existing = { mcpServers: { "some-other-tool": { command: "node" } } };
+    const config = mergePiAskRules(existing, writeTools);
+    expect((config.mcpServers as Record<string, unknown>)["some-other-tool"]).toEqual({ command: "node" });
   });
 });
 

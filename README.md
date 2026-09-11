@@ -34,6 +34,14 @@ Set via `BITBUCKET_MCP_MODE`, or picked during `configure`:
 
 `BITBUCKET_MCP_READONLY=1` still works as an alias for `mode=readonly`, for anyone who set it before `BITBUCKET_MCP_MODE` existed.
 
+## Always-ask enforcement for write operations
+
+Modes above are enforced by this server — they control what's even *possible*. Some agents let you add a second, independent layer on top: a host-level rule that always pauses for your approval before running one of this server's write operations, even if that agent is otherwise running in an auto-approve/"yolo" mode.
+
+`configure` offers this automatically, right after registering, for the three agents whose own docs confirm the rule actually survives their most permissive mode: **Claude Code**, **OpenCode**, and **Pi Agent**. Say yes and it writes the rule for you — no manual editing.
+
+It isn't offered for Cursor or GitHub Copilot: Cursor's mechanism is an allowlist only ("best-effort, not a security guarantee" per its own docs), and Copilot's permission model has no "always ask" tier, just allow/deny. For Codex CLI, no action is needed — it already inspects each tool's own risk annotation and always asks before `bitbucket_pull_request_merge`, `bitbucket_pull_request_decline`, or `bitbucket_branch_delete`, regardless of its approval policy.
+
 ## Token scopes by use case
 
 On the "Select Bitbucket scopes" screen, search each name below and check it:

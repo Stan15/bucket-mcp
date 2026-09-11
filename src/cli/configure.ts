@@ -194,7 +194,12 @@ export async function runConfigureWizard(): Promise<void> {
       const chosen = requireNotCancelled(
         await p.select({
           message: "Which workspace should be the default?",
-          initialValue: workspaces.some((w) => w.workspace.slug === currentWorkspace) ? currentWorkspace : undefined,
+          initialValue:
+            workspaces.length === 1
+              ? workspaces[0].workspace.slug
+              : workspaces.some((w) => w.workspace.slug === currentWorkspace)
+                ? currentWorkspace
+                : undefined,
           options: [
             ...workspaces.map((w) => ({ value: w.workspace.slug, label: w.workspace.name ?? w.workspace.slug, hint: w.workspace.slug })),
             { value: undefined, label: "No default - I'll specify one per request or set this later" },
